@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediFind - Medicine Alternative Finder</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+
+<header>
+    <nav class="navbar">
+        <div class="logo">MediFind</div>
+
+        <div class="nav-links">
+            <a href="{{ url_for('index') }}">Home</a>
+            <a href="{{ url_for('login') }}">Login</a>
+            <a href="{{ url_for('register') }}" class="nav-button">Register</a>
+        </div>
+    </nav>
+</header>
+
+
+<main>
+
+    <!-- Hero Section -->
+    <section class="hero">
+
+        <div class="hero-content">
+
+            <h1>
+                Find the Right Medicine
+                <span>at a Better Price</span>
+            </h1>
+
+            <p>
+                Search medicines by name or composition and discover
+                medicines with the same active composition.
+            </p>
+
+            <div class="hero-buttons">
+                <a href="{{ url_for('login') }}" class="primary-button">
+                    Search Medicine
+                </a>
+
+                <a href="{{ url_for('register') }}" class="secondary-button">
+                    Create Account
+                </a>
+            </div>
+
+        </div>
+
+    </section>
+
+
+    <!-- How It Works -->
+    <section class="section">
+
+        <h2>How MediFind Works</h2>
+
+        <div class="card-container">
+
+            <div class="info-card">
+                <h3>01. Search</h3>
+                <p>
+                    Enter the medicine name or its composition.
+                </p>
+            </div>
+
+            <div class="info-card">
+                <h3>02. Compare</h3>
+                <p>
+                    Find medicines containing the same active composition
+                    and compare their prices.
+                </p>
+            </div>
+
+            <div class="info-card">
+                <h3>03. Manage</h3>
+                <p>
+                    Save medicines, track your history and manage
+                    your regular medication schedule.
+                </p>
+            </div>
+
+        </div>
+
+    </section>
+
+
+    <!-- Features -->
+    <section class="section">
+
+        <h2>Features</h2>
+
+        <div class="card-container">
+
+            <div class="info-card">
+                <h3>Medicine Search</h3>
+                <p>
+                    Search medicines using their name or composition.
+                </p>
+            </div>
+
+            <div class="info-card">
+                <h3>Price Comparison</h3>
+                <p>
+                    Compare prices of medicines with matching compositions.
+                </p>
+            </div>
+
+            <div class="info-card">
+                <h3>Medication History</h3>
+                <p>
+                    Keep track of previous searches and regular medicines.
+                </p>
+            </div>
+
+            <div class="info-card">
+                <h3>Medication Reminders</h3>
+                <p>
+                    Create schedules for medicines that you take regularly.
+                </p>
+            </div>
+
+            <div class="info-card">
+                <h3>Safety Information</h3>
+                <p>
+                    View general side-effect and precaution information.
+                </p>
+            </div>
+
+        </div>
+
+    </section>
+
+</main>
+
+
+<footer>
+    <p>© 2026 MediFind. For informational purposes only.</p>
+</footer>
+
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+
+</body>
+</html>

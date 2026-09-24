@@ -1,0 +1,8 @@
+flask
+flask_sqlalchemy
+mysql_connector 
+mysql_connector_python
+mysql_connector_python_rf
+dotenv
+
+

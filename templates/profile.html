@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>Profile - MediFind</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='css/style.css') }}">
+
+</head>
+
+
+<body>
+
+<header>
+
+    <nav class="navbar">
+
+        <div class="logo">
+
+            <a href="{{ url_for('dashboard') }}">
+                MediFind
+            </a>
+
+        </div>
+
+
+        <div class="nav-links">
+
+            <a href="{{ url_for('dashboard') }}">
+                Dashboard
+            </a>
+
+            <a href="{{ url_for('search') }}">
+                Search
+            </a>
+
+            <a href="{{ url_for('medications') }}">
+                My Medicines
+            </a>
+
+            <a href="{{ url_for('history') }}">
+                History
+            </a>
+
+        </div>
+
+    </nav>
+
+</header>
+
+
+<main class="profile-container">
+
+    <section class="page-header">
+
+        <h1>My Profile</h1>
+
+        <p>
+            Manage your account information.
+        </p>
+
+    </section>
+
+
+    <!-- Profile Information -->
+
+    <section class="profile-card">
+
+        <h2>Personal Information</h2>
+
+
+        <form method="POST"
+              action="{{ url_for('profile') }}">
+
+
+            <div class="form-group">
+
+                <label for="name">
+                    Full Name
+                </label>
+
+                <input
+                    type="text"
+                    id="name"
+                    name="name"
+                    value="{{ user.name }}"
+                    required
+                >
+
+            </div>
+
+
+            <div class="form-group">
+
+                <label for="email">
+                    Email
+                </label>
+
+                <input
+                    type="email"
+                    id="email"
+                    name="email"
+                    value="{{ user.email }}"
+                    required
+                >
+
+            </div>
+
+
+            <button type="submit"
+                    class="primary-button">
+
+                Update Profile
+
+            </button>
+
+        </form>
+
+    </section>
+
+
+    <!-- Password -->
+
+    <section class="profile-card">
+
+        <h2>Change Password</h2>
+
+
+        <form method="POST"
+              action="{{ url_for('change_password') }}">
+
+
+            <div class="form-group">
+
+                <label for="current_password">
+                    Current Password
+                </label>
+
+                <input
+                    type="password"
+                    id="current_password"
+                    name="current_password"
+                    required
+                >
+
+            </div>
+
+
+            <div class="form-group">
+
+                <label for="new_password">
+                    New Password
+                </label>
+
+                <input
+                    type="password"
+                    id="new_password"
+                    name="new_password"
+                    required
+                >
+
+            </div>
+
+
+            <div class="form-group">
+
+                <label for="confirm_password">
+                    Confirm New Password
+                </label>
+
+                <input
+                    type="password"
+                    id="confirm_password"
+                    name="confirm_password"
+                    required
+                >
+
+            </div>
+
+
+            <button type="submit"
+                    class="secondary-button">
+
+                Change Password
+
+            </button>
+
+        </form>
+
+    </section>
+
+
+    <!-- Notification Settings -->
+
+    <section class="profile-card">
+
+        <h2>Notification Settings</h2>
+
+
+        <div class="setting-row">
+
+            <div>
+
+                <h3>Medication Reminders</h3>
+
+                <p>
+                    Receive reminders for upcoming doses.
+                </p>
+
+            </div>
+
+
+            <label class="switch">
+
+                <input
+                    type="checkbox"
+                    name="medication_notifications"
+                    checked
+                >
+
+                <span class="slider"></span>
+
+            </label>
+
+        </div>
+
+    </section>
+
+
+    <!-- Logout -->
+
+    <section class="profile-card danger-section">
+
+        <h2>Account</h2>
+
+        <a href="{{ url_for('login') }}"
+           class="danger-button">
+
+            Logout
+
+        </a>
+
+    </section>
+
+</main>
+
+
+<footer>
+
+    <p>
+        © 2026 MediFind
+    </p>
+
+</footer>
+
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+<script src="{{ url_for('static', filename='js/profile.js') }}"></script>
+
+</body>
+</html>
