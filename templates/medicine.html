@@ -5,25 +5,30 @@
 
     <meta charset="UTF-8">
 
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1.0">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
 
     <title>
-        {{ medicine.name if medicine else 'Medicine Details' }}
-        - MediFind
+        {{ medicine.medicine_name or medicine.name }} - MediFind
     </title>
 
-    <link rel="stylesheet"
-          href="{{ url_for('static', filename='css/style.css') }}">
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/style.css') }}"
+    >
 
 </head>
 
 
 <body>
 
+
 <header>
 
     <nav class="navbar">
+
 
         <div class="logo">
 
@@ -52,36 +57,61 @@
                 History
             </a>
 
+            <a href="{{ url_for('profile') }}">
+                Profile
+            </a>
+
+            <a href="{{ url_for('logout') }}">
+                Logout
+            </a>
+
         </div>
+
 
     </nav>
 
 </header>
 
 
+
 <main class="medicine-details-container">
 
 
-    <!-- Medicine Information -->
+    <!-- ==================================================
+         MEDICINE INFORMATION
+         ================================================== -->
+
 
     <section class="medicine-information">
 
+
         <h1>
-            {{ medicine.name }}
+
+            {{ medicine.medicine_name or medicine.name }}
+
         </h1>
 
 
         <p class="medicine-manufacturer">
-            Manufacturer:
-            {{ medicine.manufacturer }}
+
+            <strong>
+                Manufacturer:
+            </strong>
+
+            {{ medicine.manufacturer or "Not available" }}
+
         </p>
+
 
 
         <div class="medicine-detail-grid">
 
+
             <div>
 
-                <h3>Composition</h3>
+                <h3>
+                    Composition
+                </h3>
 
                 <p>
                     {{ medicine.composition }}
@@ -90,178 +120,375 @@
             </div>
 
 
+
             <div>
 
-                <h3>Dosage Form</h3>
+                <h3>
+                    Dosage Form
+                </h3>
 
                 <p>
-                    {{ medicine.dosage_form }}
+                    {{ medicine.dosage_form or "Tablet" }}
                 </p>
 
             </div>
+
 
 
             <div>
 
-                <h3>Price</h3>
+                <h3>
+                    Price
+                </h3>
 
                 <p class="large-price">
-                    ₹{{ medicine.price }}
+
+                    ₹{{ "%.2f"|format(
+                        medicine.price|float
+                    ) }}
+
                 </p>
 
             </div>
 
+
         </div>
+
+
+
+        {% if medicine.description %}
+
+        <div class="medicine-description">
+
+            <h3>
+                Description
+            </h3>
+
+            <p>
+                {{ medicine.description }}
+            </p>
+
+        </div>
+
+        {% endif %}
+
 
 
         <div class="medicine-actions">
 
-            <form method="POST"
-                  action="{{ url_for('add_medication',
-                                    medicine_id=medicine.id) }}">
 
-                <button type="submit"
-                        class="primary-button">
+            {% if session.get("user_id") %}
 
-                    Add to My Medicines
 
-                </button>
+            <button
+                type="button"
+                class="primary-button"
+                onclick="addMedicineToMyList({{ medicine.id }})"
+            >
 
-            </form>
+                Add to My Medicines
+
+            </button>
+
+
+            {% else %}
+
+
+            <a
+                href="{{ url_for('login') }}"
+                class="primary-button"
+            >
+
+                Login to Add Medicine
+
+            </a>
+
+
+            {% endif %}
+
 
         </div>
+
 
     </section>
 
 
-    <!-- Alternatives -->
+
+
+    <!-- ==================================================
+         AI MEDICINE ADVISOR
+         ================================================== -->
+
 
     <section class="section">
 
-        <h2>
-            Medicines with Matching Composition
-        </h2>
 
-        <p>
-            These medicines contain matching active
-            composition information available in the database.
-        </p>
+        <div class="safety-card">
 
 
-        <div class="results-container">
+            <div
+                style="
+                    display:flex;
+                    align-items:center;
+                    gap:18px;
+                    margin-bottom:15px;
+                "
+            >
 
-            {% for alternative in alternatives %}
 
-            <div class="medicine-result-card">
+                <div
+                    style="
+                        width:72px;
+                        height:72px;
+                        display:flex;
+                        align-items:center;
+                        justify-content:center;
+                        border-radius:18px;
+                        background:#e8efff;
+                        font-size:38px;
+                    "
+                >
 
-                <div>
-
-                    <h3>
-                        {{ alternative.name }}
-                    </h3>
-
-                    <p>
-                        {{ alternative.composition }}
-                    </p>
-
-                    <p>
-                        Manufacturer:
-                        {{ alternative.manufacturer }}
-                    </p>
-
-                    <p class="price">
-                        ₹{{ alternative.price }}
-                    </p>
-
-                    {% if alternative.price < medicine.price %}
-
-                    <p class="saving-text">
-
-                        Potentially cheaper than
-                        {{ medicine.name }}
-
-                    </p>
-
-                    {% endif %}
+                    🤖
 
                 </div>
 
 
-                <a href="{{ url_for(
-                            'medicine',
-                            medicine_id=alternative.id
-                           ) }}"
-                   class="secondary-button">
+                <h2 style="margin:0;">
 
-                    View
+                    AI Medicine Advisor
 
-                </a>
+                </h2>
+
 
             </div>
 
-            {% endfor %}
+
+
+            <p>
+
+                Get AI-generated general information
+                about this medicine, including its uses,
+                common side effects, precautions and
+                important safety information.
+
+            </p>
+
+
+
+            <!-- GET GENERAL AI ADVICE -->
+
+            <button
+                id="get-ai-advice-button"
+                type="button"
+                class="primary-button"
+                onclick="getAIAdvice()"
+            >
+
+                🤖 Get AI Advice
+
+            </button>
+
+
+
+            <!-- AI GENERAL RESULT -->
+
+            <div
+                id="ai-advice-result"
+                style="display:none;"
+            >
+
+            </div>
+
+
+
+            <hr
+                style="
+                    margin:35px 0;
+                    border:0;
+                    border-top:1px solid #dbe3ef;
+                "
+            >
+
+
+
+            <!-- ASK AI -->
+
+            <h3>
+
+                Have a question about this medicine?
+
+            </h3>
+
+
+
+            <p>
+
+                Ask a general question about the medicine,
+                its common uses, precautions or side effects.
+
+            </p>
+
+
+
+            <textarea
+                id="ai-question"
+                rows="5"
+                placeholder="e.g. Why is this medicine used?"
+                style="
+                    width:100%;
+                    box-sizing:border-box;
+                    resize:vertical;
+                    padding:16px;
+                    border:1px solid #cbd5e1;
+                    border-radius:12px;
+                    font-size:16px;
+                    margin-top:10px;
+                    font-family:inherit;
+                "
+            ></textarea>
+
+
+
+            <button
+                id="ask-ai-button"
+                type="button"
+                class="primary-button"
+                onclick="askAI()"
+                style="margin-top:15px;"
+            >
+
+                Ask AI
+
+            </button>
+
+
+
+            <!-- AI QUESTION RESULT -->
+
+            <div
+                id="ai-question-result"
+                style="display:none;"
+            >
+
+            </div>
+
 
         </div>
+
 
     </section>
 
 
-    <!-- Safety Information -->
+
+
+    <!-- ==================================================
+         SUBSTITUTE MEDICINES
+         ================================================== -->
+
 
     <section class="section">
 
-        <h2>Safety Information</h2>
+
+        <h2>
+
+            Medicines with Matching Composition
+
+        </h2>
 
 
-        <div class="safety-card">
+        <p>
 
-            <h3>Possible Side Effects</h3>
-
-            <ul>
-
-                {% for effect in side_effects %}
-
-                <li>
-                    {{ effect }}
-                </li>
-
-                {% endfor %}
-
-            </ul>
-
-        </div>
-
-
-        <div class="safety-card">
-
-            <h3>Precautions</h3>
-
-            <ul>
-
-                {% for precaution in precautions %}
-
-                <li>
-                    {{ precaution }}
-                </li>
-
-                {% endfor %}
-
-            </ul>
-
-        </div>
-
-
-        <p class="medical-warning">
-
-            This information is for general educational purposes.
-            Consult a qualified doctor or pharmacist for
-            medication-specific advice.
+            These medicines have the same composition
+            recorded in the MediFind database.
 
         </p>
 
+
+
+        <div
+            id="substitutes-container"
+            class="results-container"
+        >
+
+
+            <div class="empty-state">
+
+
+                <h2>
+
+                    Finding substitutes...
+
+                </h2>
+
+
+                <p>
+
+                    Checking medicines with
+                    matching composition.
+
+                </p>
+
+
+            </div>
+
+
+        </div>
+
+
     </section>
 
+
+
+
+    <!-- ==================================================
+         IMPORTANT MEDICAL INFORMATION
+         ================================================== -->
+
+
+    <section class="section">
+
+
+        <div class="safety-card">
+
+
+            <h3>
+
+                Important Information
+
+            </h3>
+
+
+            <p>
+
+                Medicine substitutions should only be
+                made after confirming that the active
+                composition, strength, dosage form and
+                suitability are appropriate.
+
+            </p>
+
+
+            <p class="medical-warning">
+
+                MediFind provides database-based medicine
+                information and AI-generated educational
+                information. It is not a diagnosis or a
+                prescription. Confirm medication decisions
+                with a qualified doctor or pharmacist.
+
+            </p>
+
+
+        </div>
+
+
+    </section>
+
+
 </main>
+
+
 
 
 <footer>
@@ -272,8 +499,45 @@
 
 </footer>
 
-<script src="{{ url_for('static', filename='js/main.js') }}"></script>
-<script src="{{ url_for('static', filename='js/medicine.js') }}"></script>
+
+
+
+<!-- ==================================================
+     CURRENT MEDICINE ID
+     ================================================== -->
+
+
+<script>
+
+    const currentMedicineId =
+        {{ medicine.id|int }};
+
+</script>
+
+
+
+
+<!-- ==================================================
+     JAVASCRIPT
+     ================================================== -->
+
+
+<script
+    src="{{ url_for(
+        'static',
+        filename='js/main.js'
+    ) }}"
+></script>
+
+
+<script
+    src="{{ url_for(
+        'static',
+        filename='js/medicine.js'
+    ) }}"
+></script>
+
 
 </body>
+
 </html>

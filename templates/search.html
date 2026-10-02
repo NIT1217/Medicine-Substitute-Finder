@@ -5,13 +5,17 @@
 
     <meta charset="UTF-8">
 
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1.0">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
 
     <title>Search Medicine - MediFind</title>
 
-    <link rel="stylesheet"
-          href="{{ url_for('static', filename='css/style.css') }}">
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/style.css') }}"
+    >
 
 </head>
 
@@ -23,15 +27,22 @@
     <nav class="navbar">
 
         <div class="logo">
+
             <a href="{{ url_for('dashboard') }}">
                 MediFind
             </a>
+
         </div>
+
 
         <div class="nav-links">
 
             <a href="{{ url_for('dashboard') }}">
                 Dashboard
+            </a>
+
+            <a href="{{ url_for('search') }}">
+                Search
             </a>
 
             <a href="{{ url_for('medications') }}">
@@ -46,6 +57,10 @@
                 Profile
             </a>
 
+            <a href="{{ url_for('logout') }}">
+                Logout
+            </a>
+
         </div>
 
     </nav>
@@ -55,46 +70,103 @@
 
 <main class="search-container">
 
-    <section class="search-section">
 
-        <h1>Find a Medicine</h1>
+    <!-- ==============================
+         SEARCH HEADER
+         ============================== -->
+
+    <section class="search-header">
+
+        <h1>
+            Find a Medicine
+        </h1>
 
         <p>
             Search by medicine name or active composition.
         </p>
 
+    </section>
 
-        <form method="GET"
-              action="{{ url_for('search') }}"
-              class="medicine-search-form">
 
-            <input
-                type="text"
-                name="query"
-                value="{{ query or '' }}"
-                placeholder="e.g. Dolo 650 or Paracetamol"
-                required
+    <!-- ==============================
+         SEARCH FORM
+         ============================== -->
+
+    <section class="search-form-section">
+
+        <form
+            method="GET"
+            action="{{ url_for('search') }}"
+            class="search-form"
+        >
+
+            <div class="form-group">
+
+                <label for="query">
+                    Medicine Search
+                </label>
+
+                <input
+                    type="text"
+                    id="query"
+                    name="query"
+                    value="{{ query or '' }}"
+                    placeholder="e.g. Dolo 650 or Paracetamol"
+                    autocomplete="off"
+                    required
+                >
+
+            </div>
+
+
+            <div class="form-group">
+
+                <label for="search_type">
+                    Search By
+                </label>
+
+                <select
+                    id="search_type"
+                    name="search_type"
+                >
+
+                    <option
+                        value="both"
+                        {% if search_type == "both" %}
+                        selected
+                        {% endif %}
+                    >
+                        Medicine Name or Composition
+                    </option>
+
+                    <option
+                        value="name"
+                        {% if search_type == "name" %}
+                        selected
+                        {% endif %}
+                    >
+                        Medicine Name
+                    </option>
+
+                    <option
+                        value="composition"
+                        {% if search_type == "composition" %}
+                        selected
+                        {% endif %}
+                    >
+                        Composition
+                    </option>
+
+                </select>
+
+            </div>
+
+
+            <button
+                type="submit"
+                class="primary-button search-button"
             >
-
-
-            <select name="search_type">
-
-                <option value="medicine">
-                    Medicine Name
-                </option>
-
-                <option value="composition">
-                    Composition
-                </option>
-
-            </select>
-
-
-            <button type="submit"
-                    class="primary-button">
-
                 Search
-
             </button>
 
         </form>
@@ -102,75 +174,154 @@
     </section>
 
 
-    {% if results %}
+    <!-- ==============================
+         SEARCH RESULTS
+         ============================== -->
 
-    <section class="section">
+    <section class="search-results-section">
 
-        <h2>Search Results</h2>
+        <h2>
+            Search Results
+        </h2>
 
 
-        <div class="results-container">
+        {% if query %}
 
-            {% for medicine in results %}
+            {% if results %}
 
-            <div class="medicine-result-card">
+                <p class="search-summary">
 
-                <div>
+                    Found
+                    <strong>{{ results|length }}</strong>
+                    medicine{% if results|length != 1 %}s{% endif %}
+                    for
+                    <strong>"{{ query }}"</strong>
 
-                    <h3>
-                        {{ medicine.name }}
-                    </h3>
+                </p>
 
-                    <p>
-                        Composition:
-                        {{ medicine.composition }}
-                    </p>
 
-                    <p>
-                        Manufacturer:
-                        {{ medicine.manufacturer }}
-                    </p>
+                <div class="results-container">
 
-                    <p class="price">
-                        ₹{{ medicine.price }}
-                    </p>
+                    {% for medicine in results %}
+
+                    <div class="medicine-result-card">
+
+
+                        <div class="medicine-result-information">
+
+                            <h3>
+                                {{ medicine.medicine_name }}
+                            </h3>
+
+
+                            <p>
+
+                                <strong>
+                                    Composition:
+                                </strong>
+
+                                {{ medicine.composition }}
+
+                            </p>
+
+
+                            <p>
+
+                                <strong>
+                                    Manufacturer:
+                                </strong>
+
+                                {{ medicine.manufacturer or "Not available" }}
+
+                            </p>
+
+
+                            <p>
+
+                                <strong>
+                                    Price:
+                                </strong>
+
+                                ₹{{ "%.2f"|format(medicine.price|float) }}
+
+                            </p>
+
+
+                        </div>
+
+
+                        <div class="medicine-result-action">
+
+                            <a
+                                href="{{ url_for(
+                                    'medicine_details',
+                                    medicine_id=medicine.id
+                                ) }}"
+                                class="primary-button"
+                            >
+
+                                View Details
+
+                            </a>
+
+                        </div>
+
+
+                    </div>
+
+                    {% endfor %}
 
                 </div>
 
 
-                <a href="{{ url_for('medicine',
-                                     medicine_id=medicine.id) }}"
-                   class="secondary-button">
+            {% else %}
 
-                    View Details
+                <div class="empty-state">
 
-                </a>
+                    <h3>
+                        No medicines found
+                    </h3>
+
+                    <p>
+
+                        We couldn't find a medicine matching
+                        <strong>"{{ query }}"</strong>.
+
+                    </p>
+
+                    <p>
+                        Try searching for:
+                        <strong>Dolo 650</strong>,
+                        <strong>Paracetamol</strong>,
+                        or
+                        <strong>Azithromycin</strong>.
+                    </p>
+
+                </div>
+
+            {% endif %}
+
+
+        {% else %}
+
+            <div class="empty-state">
+
+                <h3>
+                    Search for a medicine
+                </h3>
+
+                <p>
+                    Enter a medicine name or composition above
+                    to see available medicines.
+                </p>
 
             </div>
 
-            {% endfor %}
+        {% endif %}
 
-        </div>
 
     </section>
 
-    {% endif %}
-
-
-    {% if query and not results %}
-
-    <section class="empty-state">
-
-        <h2>No medicines found</h2>
-
-        <p>
-            Try searching with another medicine name
-            or composition.
-        </p>
-
-    </section>
-
-    {% endif %}
 
 </main>
 
@@ -183,8 +334,12 @@
 
 </footer>
 
-<script src="{{ url_for('static', filename='js/main.js') }}"></script>
-<script src="{{ url_for('static', filename='js/search.js') }}"></script>
+
+<script
+    src="{{ url_for('static', filename='js/main.js') }}"
+></script>
+
 
 </body>
+
 </html>

@@ -1,207 +1,457 @@
+```html
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-
     <meta charset="UTF-8">
-
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1.0">
-
-    <title>History - MediFind</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search History - MediFind</title>
 
     <link rel="stylesheet"
           href="{{ url_for('static', filename='css/style.css') }}">
 
-</head>
+    <style>
+        .history-container {
+            max-width: 1250px;
+            margin: 40px auto;
+            padding: 20px;
+        }
 
+        .history-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            gap: 20px;
+        }
+
+        .history-header h1 {
+            margin: 0 0 8px;
+        }
+
+        .history-header p {
+            margin: 0;
+            color: #666;
+        }
+
+        .filter-card,
+        .history-card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+        }
+
+        .filter-card {
+            padding: 22px;
+            display: grid;
+            grid-template-columns: 1fr 230px auto;
+            gap: 14px;
+            margin-bottom: 25px;
+        }
+
+        .filter-card input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 13px 15px;
+            border: 1px solid #d4d8df;
+            border-radius: 9px;
+            font-size: 15px;
+        }
+
+        .filter-button {
+            border: none;
+            border-radius: 9px;
+            padding: 12px 22px;
+            background: #2864e8;
+            color: white;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .history-card {
+            overflow: hidden;
+        }
+
+        .history-table-wrapper {
+            overflow-x: auto;
+        }
+
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 850px;
+        }
+
+        .history-table th,
+        .history-table td {
+            padding: 18px 20px;
+            text-align: left;
+            border-bottom: 1px solid #edf0f4;
+        }
+
+        .history-table th {
+            background: #f7f9fc;
+            color: #26364d;
+            font-size: 15px;
+        }
+
+        .history-table td {
+            color: #444;
+        }
+
+        .medicine-link {
+            color: #2864e8;
+            font-weight: 700;
+            text-decoration: none;
+        }
+
+        .medicine-link:hover {
+            text-decoration: underline;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 65px 25px;
+            color: #5e6673;
+        }
+
+        .empty-state h2 {
+            color: #26364d;
+            margin-bottom: 8px;
+        }
+
+        .no-match {
+            display: none;
+            text-align: center;
+            padding: 45px 20px;
+            color: #666;
+        }
+
+        @media (max-width: 800px) {
+            .filter-card {
+                grid-template-columns: 1fr;
+            }
+
+            .history-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+    </style>
+</head>
 
 <body>
 
-<header>
+    <header>
+        <nav class="navbar">
 
-    <nav class="navbar">
+            <div class="logo">
+                <a href="{{ url_for('dashboard') }}">MediFind</a>
+            </div>
 
-        <div class="logo">
+            <div class="nav-links">
+                <a href="{{ url_for('dashboard') }}">Dashboard</a>
+                <a href="{{ url_for('search') }}">Search</a>
+                <a href="{{ url_for('history') }}">History</a>
+                <a href="{{ url_for('profile') }}">Profile</a>
+                <a href="{{ url_for('logout') }}">Logout</a>
+            </div>
 
-            <a href="{{ url_for('dashboard') }}">
-                MediFind
-            </a>
-
-        </div>
-
-
-        <div class="nav-links">
-
-            <a href="{{ url_for('dashboard') }}">
-                Dashboard
-            </a>
-
-            <a href="{{ url_for('search') }}">
-                Search
-            </a>
-
-            <a href="{{ url_for('medications') }}">
-                My Medicines
-            </a>
-
-            <a href="{{ url_for('profile') }}">
-                Profile
-            </a>
-
-        </div>
-
-    </nav>
-
-</header>
+        </nav>
+    </header>
 
 
-<main class="history-container">
+    <main class="history-container">
 
-    <section class="page-header">
+        <section class="history-header">
 
-        <h1>Search History</h1>
+            <div>
+                <h1>Search History</h1>
+                <p>View your previous medicine searches.</p>
+            </div>
 
-        <p>
-            View your previous medicine searches.
-        </p>
-
-    </section>
+        </section>
 
 
-    <!-- Search Filter -->
+        <!-- FILTER SECTION -->
 
-    <section class="filter-section">
-
-        <form method="GET"
-              action="{{ url_for('history') }}">
+        <section class="filter-card">
 
             <input
                 type="text"
-                name="search"
+                id="historySearch"
                 placeholder="Search history..."
-                value="{{ search or '' }}"
+                autocomplete="off"
             >
-
 
             <input
                 type="date"
-                name="date"
-                value="{{ date or '' }}"
+                id="historyDate"
             >
 
-
-            <button type="submit"
-                    class="primary-button">
-
+            <button
+                type="button"
+                class="filter-button"
+                onclick="filterHistory()"
+            >
                 Filter
-
             </button>
 
-        </form>
-
-    </section>
+        </section>
 
 
-    <!-- History Table -->
+        <!-- HISTORY TABLE -->
 
-    <section class="history-table-container">
+        <section class="history-card">
 
-        <table>
+            {% if history %}
 
-            <thead>
+                <div class="history-table-wrapper">
 
-                <tr>
+                    <table class="history-table" id="historyTable">
 
-                    <th>Date</th>
+                        <thead>
 
-                    <th>Search Query</th>
+                            <tr>
+                                <th>Date</th>
+                                <th>Search Query</th>
+                                <th>Medicine</th>
+                                <th>Composition</th>
+                                <th>Action</th>
+                            </tr>
 
-                    <th>Medicine</th>
-
-                    <th>Composition</th>
-
-                    <th>Action</th>
-
-                </tr>
-
-            </thead>
+                        </thead>
 
 
-            <tbody>
+                        <tbody>
 
-                {% for item in history %}
+                            {% for item in history %}
 
-                <tr>
+                                <tr
+                                    class="history-row"
+                                    data-search="{{ (item.search_text ~ ' ' ~ item.medicine_name ~ ' ' ~ item.composition)|lower }}"
+                                    data-date="{{ item.searched_at[:10] if item.searched_at else '' }}"
+                                >
 
-                    <td>
-                        {{ item.searched_at }}
-                    </td>
+                                    <!-- DATE -->
 
-                    <td>
-                        {{ item.search_text }}
-                    </td>
+                                    <td>
 
-                    <td>
-                        {{ item.medicine_name }}
-                    </td>
+                                        {% if item.searched_at %}
 
-                    <td>
-                        {{ item.composition }}
-                    </td>
+                                            {{ item.searched_at[:10] }}
 
-                    <td>
+                                            {{ item.searched_at[11:19] }}
 
-                        <a href="{{ url_for(
-                            'medicine',
-                            medicine_id=item.medicine_id
-                        ) }}">
+                                        {% else %}
 
-                            View
+                                            -
 
-                        </a>
+                                        {% endif %}
 
-                    </td>
-
-                </tr>
-
-                {% endfor %}
-
-            </tbody>
-
-        </table>
+                                    </td>
 
 
-        {% if not history %}
+                                    <!-- SEARCH QUERY -->
 
-        <div class="empty-state">
-
-            <h2>No search history</h2>
-
-            <p>
-                Your medicine searches will appear here.
-            </p>
-
-        </div>
-
-        {% endif %}
-
-    </section>
-
-</main>
+                                    <td>
+                                        {{ item.search_text or '-' }}
+                                    </td>
 
 
-<footer>
+                                    <!-- MEDICINE -->
 
-    <p>
-        © 2026 MediFind
-    </p>
+                                    <td>
 
-</footer>
+                                        {% if item.medicine_id %}
 
-<script src="{{ url_for('static', filename='js/main.js') }}"></script>
-<script src="{{ url_for('static', filename='js/history.js') }}"></script>
+                                            <a
+                                                class="medicine-link"
+                                                href="{{ url_for('medicine_details', medicine_id=item.medicine_id) }}"
+                                            >
+                                                {{ item.medicine_name }}
+                                            </a>
+
+                                        {% else %}
+
+                                            {{ item.medicine_name or '-' }}
+
+                                        {% endif %}
+
+                                    </td>
+
+
+                                    <!-- COMPOSITION -->
+
+                                    <td>
+                                        {{ item.composition or 'Not available' }}
+                                    </td>
+
+
+                                    <!-- ACTION -->
+
+                                    <td>
+
+                                        {% if item.medicine_id %}
+
+                                            <a
+                                                class="medicine-link"
+                                                href="{{ url_for('medicine_details', medicine_id=item.medicine_id) }}"
+                                            >
+                                                View
+                                            </a>
+
+                                        {% else %}
+
+                                            -
+
+                                        {% endif %}
+
+                                    </td>
+
+                                </tr>
+
+                            {% endfor %}
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+
+                <!-- NO FILTER MATCH -->
+
+                <div class="no-match" id="noMatch">
+
+                    <h3>No matching search history</h3>
+
+                    <p>
+                        Try another medicine name or date.
+                    </p>
+
+                </div>
+
+
+            {% else %}
+
+                <!-- NO HISTORY AT ALL -->
+
+                <div class="empty-state">
+
+                    <h2>No search history</h2>
+
+                    <p>
+                        Your medicine searches will appear here.
+                    </p>
+
+                </div>
+
+            {% endif %}
+
+        </section>
+
+    </main>
+
+
+    <script>
+
+        function filterHistory() {
+
+            const searchValue =
+                document
+                    .getElementById("historySearch")
+                    .value
+                    .trim()
+                    .toLowerCase();
+
+
+            const dateValue =
+                document.getElementById("historyDate").value;
+
+
+            const rows =
+                document.querySelectorAll(".history-row");
+
+
+            let visibleCount = 0;
+
+
+            rows.forEach(function (row) {
+
+                const searchableText =
+                    row.dataset.search || "";
+
+
+                const rowDate =
+                    row.dataset.date || "";
+
+
+                const searchMatches =
+                    !searchValue ||
+                    searchableText.includes(searchValue);
+
+
+                const dateMatches =
+                    !dateValue ||
+                    rowDate === dateValue;
+
+
+                if (searchMatches && dateMatches) {
+
+                    row.style.display = "table-row";
+
+                    visibleCount++;
+
+                } else {
+
+                    row.style.display = "none";
+
+                }
+
+            });
+
+
+            const noMatch =
+                document.getElementById("noMatch");
+
+
+            if (noMatch) {
+
+                noMatch.style.display =
+                    visibleCount === 0
+                        ? "block"
+                        : "none";
+
+            }
+
+        }
+
+
+        /*
+         * Live search
+         */
+
+        document
+            .getElementById("historySearch")
+            ?.addEventListener(
+                "input",
+                filterHistory
+            );
+
+
+        /*
+         * Date filter
+         */
+
+        document
+            .getElementById("historyDate")
+            ?.addEventListener(
+                "change",
+                filterHistory
+            );
+
+    </script>
 
 </body>
 </html>
-
+```

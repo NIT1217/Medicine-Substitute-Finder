@@ -9,11 +9,21 @@ from flask import (
 )
 
 from werkzeug.security import generate_password_hash, check_password_hash
-
-from datetime import datetime, timedelta
+from datetime import datetime, date
+from decimal import Decimal
+from dotenv import load_dotenv
+from functools import wraps
+from sqlalchemy import or_, create_engine
+from sqlalchemy.pool import NullPool
+import mysql.connector
+import os
+import json
+import urllib.request
+import urllib.error
+import threading
+import time
 
 from database import db
-
 from database.models import (
     User,
     Medicine,
@@ -23,330 +33,510 @@ from database.models import (
 )
 
 
-from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
-from database import db
-from dotenv import load_dotenv
-from sqlalchemy.engine import URL
-import os
+# ============================================================
+# LOAD ENVIRONMENT VARIABLES
+# ============================================================
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ENV_PATH = os.path.join(BASE_DIR, ".env")
+
+load_dotenv(ENV_PATH, override=True)
+
+
+# ============================================================
+# MYSQL CONFIGURATION
+# ============================================================
+
+MYSQL_HOST = os.getenv("sql_database_host", "localhost")
+MYSQL_PORT = int(os.getenv("sql_database_port", "3306"))
+MYSQL_USER = os.getenv("sql_database_user", "root")
+MYSQL_PASSWORD = os.getenv("sql_database_password", "")
+MYSQL_DATABASE = "MediFind"
+
+
+print()
+print("==========================================")
+print("MediFind MySQL Configuration")
+print("==========================================")
+print("Host     :", MYSQL_HOST)
+print("Port     :", MYSQL_PORT)
+print("User     :", MYSQL_USER)
+print("Password :", "********" if MYSQL_PASSWORD else "NOT SET")
+print("Database :", MYSQL_DATABASE)
+print("==========================================")
+print()
+
+
+# ============================================================
+# GEMINI AI CONFIGURATION
+# ============================================================
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.getenv(
+    "GEMINI_MODEL",
+    "gemini-2.5-flash"
+).strip()
+
+if GEMINI_API_KEY:
+    print("Gemini AI : Configured")
+    print("Gemini Model :", GEMINI_MODEL)
+else:
+    print("Gemini AI : API key not configured")
+
+print()
 
 
 # ============================================================
 # FLASK APPLICATION
 # ============================================================
 
-
-load_dotenv()
-
-print("DB USER:", repr(os.getenv("sql_database_user")))
-print("DB HOST:", repr(os.getenv("sql_database_host")))
-print("DB NAME:", repr(os.getenv("sql_database_name")))
-print("DB PASSWORD SET:", bool(os.getenv("sql_database_password")))
-
 app = Flask(__name__)
 
-db_url = URL.create(
-    "mysql+mysqlconnector",
-    username=os.getenv("sql_database_user"),
-    password=os.getenv("sql_database_password"),
-    host=os.getenv("sql_database_host", "localhost"),
-    port=int(os.getenv("sql_database_port", "3306")),
-    database="MediFind"
+app.secret_key = os.getenv(
+    "FLASK_SECRET_KEY",
+    "medifind-development-secret-key"
 )
 
-app.config["SQLALCHEMY_DATABASE_URI"] = db_url
+
+# ============================================================
+# MYSQL CONNECTOR CREATOR
+# ============================================================
+
+def create_mysql_connection():
+
+    return mysql.connector.connect(
+        host=MYSQL_HOST,
+        port=MYSQL_PORT,
+        user=MYSQL_USER,
+        password=MYSQL_PASSWORD,
+        database=MYSQL_DATABASE
+    )
+
+
+# ============================================================
+# SQLALCHEMY CONFIGURATION
+# ============================================================
+
+app.config["SQLALCHEMY_DATABASE_URI"] = (
+    "mysql+mysqlconnector://"
+    "root@localhost:3306/MediFind"
+)
+
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "creator": create_mysql_connection,
+    "pool_pre_ping": True
+}
 
 db.init_app(app)
 
-# Used for Flask sessions
-app.secret_key = "medifind-development-secret-key"
-
 
 # ============================================================
-# TEMPORARY DATA
-# ============================================================
-#
-# IMPORTANT:
-# No database is being used at this stage.
-#
-# These Python lists will temporarily behave like our
-# database.
-#
-# Later:
-#
-# Python lists
-#      ↓
-# MySQL tables
-#
+# DATABASE INITIALIZATION
 # ============================================================
 
+def seed_medicines():
 
-# ------------------------------------------------------------
-# USERS
-# ------------------------------------------------------------
+    if Medicine.query.count() > 0:
+        return
 
-users = []
+    initial_medicines = [
 
+        {
+            "medicine_name": "Dolo 650",
+            "composition": "Paracetamol 650mg",
+            "manufacturer": "Micro Labs",
+            "price": Decimal("30.00"),
+            "description": "Paracetamol 650mg medicine."
+        },
 
-# ------------------------------------------------------------
-# MEDICINES
-# ------------------------------------------------------------
+        {
+            "medicine_name": "Paracetamol 650",
+            "composition": "Paracetamol 650mg",
+            "manufacturer": "Generic Pharma",
+            "price": Decimal("18.00"),
+            "description": "Paracetamol 650mg generic medicine."
+        },
 
-medicines = [
+        {
+            "medicine_name": "Calpol 650",
+            "composition": "Paracetamol 650mg",
+            "manufacturer": "GSK",
+            "price": Decimal("28.00"),
+            "description": "Paracetamol 650mg medicine."
+        },
 
-    {
-        "id": 1,
+        {
+            "medicine_name": "Azithral 500",
+            "composition": "Azithromycin 500mg",
+            "manufacturer": "Alembic",
+            "price": Decimal("105.00"),
+            "description": "Azithromycin 500mg medicine."
+        },
 
-        "name": "Dolo 650",
+        {
+            "medicine_name": "Azithromycin 500",
+            "composition": "Azithromycin 500mg",
+            "manufacturer": "Generic Pharma",
+            "price": Decimal("72.00"),
+            "description": "Azithromycin 500mg generic medicine."
+        }
 
-        "composition": "Paracetamol 650mg",
+    ]
 
-        "manufacturer": "Micro Labs",
+    for item in initial_medicines:
+        db.session.add(Medicine(**item))
 
-        "price": 30.00,
-
-        "description":
-            "Paracetamol 650mg medicine."
-    },
-
-    {
-        "id": 2,
-
-        "name": "Paracetamol 650",
-
-        "composition": "Paracetamol 650mg",
-
-        "manufacturer": "Generic Pharma",
-
-        "price": 18.00,
-
-        "description":
-            "Paracetamol 650mg generic medicine."
-    },
-
-    {
-        "id": 3,
-
-        "name": "Calpol 650",
-
-        "composition": "Paracetamol 650mg",
-
-        "manufacturer": "GSK",
-
-        "price": 28.00,
-
-        "description":
-            "Paracetamol 650mg medicine."
-    },
-
-    {
-        "id": 4,
-
-        "name": "Azithral 500",
-
-        "composition": "Azithromycin 500mg",
-
-        "manufacturer": "Alembic",
-
-        "price": 105.00,
-
-        "description":
-            "Azithromycin 500mg medicine."
-    },
-
-    {
-        "id": 5,
-
-        "name": "Azithromycin 500",
-
-        "composition": "Azithromycin 500mg",
-
-        "manufacturer": "Generic Pharma",
-
-        "price": 72.00,
-
-        "description":
-            "Azithromycin 500mg generic medicine."
-    }
-
-]
+    db.session.commit()
 
 
-# ------------------------------------------------------------
-# SEARCH HISTORY
-# ------------------------------------------------------------
+try:
 
-search_history = []
+    with app.app_context():
 
+        db.create_all()
+        seed_medicines()
 
-# ------------------------------------------------------------
-# USER MEDICATIONS
-# ------------------------------------------------------------
+        print("Database initialization successful.")
 
-user_medications = []
+except Exception as error:
 
-
-# ------------------------------------------------------------
-# DOSE HISTORY
-# ------------------------------------------------------------
-
-dose_history = []
+    print("Database initialization error:", error)
 
 
 # ============================================================
 # HELPER FUNCTIONS
 # ============================================================
 
-
 def get_current_user():
-    """
-    Return the currently logged-in user.
-    """
 
     user_id = session.get("user_id")
 
     if user_id is None:
-
         return None
 
-    for user in users:
-
-        if user["id"] == user_id:
-
-            return user
-
-    return None
+    return db.session.get(User, user_id)
 
 
 def is_logged_in():
-    """
-    Check whether a user is logged in.
-    """
 
     return "user_id" in session
 
 
-def find_medicine(medicine_id):
-    """
-    Find a medicine using its ID.
-    """
+def login_required_json(function):
 
-    for medicine in medicines:
+    @wraps(function)
+    def wrapper(*args, **kwargs):
 
-        if medicine["id"] == medicine_id:
+        if not is_logged_in():
 
-            return medicine
+            return jsonify({
+                "success": False,
+                "error": "Login required."
+            }), 401
 
-    return None
+        return function(*args, **kwargs)
+
+    return wrapper
 
 
 def normalize_text(text):
-    """
-    Normalize text for basic syntactic comparison.
-
-    Example:
-
-        Paracetamol 650 MG
-
-    becomes:
-
-        paracetamol650mg
-    """
 
     if not text:
-
         return ""
 
-    text = text.lower()
-
-    text = text.replace(
-        " ",
-        ""
+    return (
+        str(text)
+        .lower()
+        .replace(" ", "")
+        .replace("-", "")
+        .replace("_", "")
     )
-
-    text = text.replace(
-        "-",
-        ""
-    )
-
-    text = text.replace(
-        "_",
-        ""
-    )
-
-    return text
 
 
 def medicine_to_dict(medicine):
-    """
-    Convert medicine dictionary into JSON-friendly data.
-    """
 
     return {
-
-        "id":
-            medicine["id"],
-
-        "name":
-            medicine["name"],
-
-        "composition":
-            medicine["composition"],
-
-        "manufacturer":
-            medicine["manufacturer"],
-
-        "price":
-            medicine["price"],
-
-        "description":
-            medicine["description"]
-
+        "id": medicine.id,
+        "name": medicine.medicine_name,
+        "medicine_name": medicine.medicine_name,
+        "composition": medicine.composition,
+        "manufacturer": medicine.manufacturer,
+        "price": float(medicine.price),
+        "description": medicine.description,
+        "created_at": (
+            medicine.created_at.isoformat()
+            if medicine.created_at
+            else None
+        )
     }
+
+
+def medication_to_dict(medication):
+
+    medicine = db.session.get(
+        Medicine,
+        medication.medicine_id
+    )
+
+    return {
+        "id": medication.id,
+        "medicine_id": medication.medicine_id,
+        "medicine_name": (
+            medicine.medicine_name
+            if medicine
+            else None
+        ),
+        "composition": (
+            medicine.composition
+            if medicine
+            else None
+        ),
+        "manufacturer": (
+            medicine.manufacturer
+            if medicine
+            else None
+        ),
+        "price": (
+            float(medicine.price)
+            if medicine and medicine.price is not None
+            else None
+        ),
+        "dosage": medication.dosage,
+        "frequency": medication.frequency,
+        "start_date": (
+            medication.start_date.isoformat()
+            if medication.start_date
+            else None
+        ),
+        "end_date": (
+            medication.end_date.isoformat()
+            if medication.end_date
+            else None
+        ),
+        "created_at": (
+            medication.created_at.isoformat()
+            if medication.created_at
+            else None
+        )
+    }
+
+
+def parse_date(value):
+
+    if not value:
+        return None
+
+    try:
+        return datetime.strptime(
+            str(value),
+            "%Y-%m-%d"
+        ).date()
+
+    except ValueError:
+        return None
+
+
+def parse_time(value):
+
+    if not value:
+        return None
+
+    try:
+        return datetime.strptime(
+            str(value),
+            "%H:%M"
+        ).time()
+
+    except ValueError:
+        return None
+
+
+def get_request_data():
+    """Accept both JSON requests and normal HTML form POSTs."""
+    if request.is_json:
+        return request.get_json(silent=True) or {}
+    return request.form.to_dict()
+
+
+# ============================================================
+# GEMINI AI HELPER
+# ============================================================
+
+def ask_gemini(prompt):
+
+    if not GEMINI_API_KEY:
+
+        return {
+            "success": False,
+            "error": (
+                "Gemini API key is not configured. "
+                "Add GEMINI_API_KEY to the .env file."
+            )
+        }
+
+    url = (
+        "https://generativelanguage.googleapis.com/"
+        "v1beta/models/"
+        + GEMINI_MODEL
+        + ":generateContent?key="
+        + GEMINI_API_KEY
+    )
+
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {
+                        "text": prompt
+                    }
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": 1200
+        }
+    }
+
+    data = json.dumps(payload).encode("utf-8")
+
+    http_request = urllib.request.Request(
+        url,
+        data=data,
+        headers={
+            "Content-Type": "application/json"
+        },
+        method="POST"
+    )
+
+    try:
+
+        with urllib.request.urlopen(
+            http_request,
+            timeout=45
+        ) as response:
+
+            response_data = json.loads(
+                response.read().decode("utf-8")
+            )
+
+        candidates = response_data.get(
+            "candidates",
+            []
+        )
+
+        if not candidates:
+            return {
+                "success": False,
+                "error": "Gemini returned no response."
+            }
+
+        text = (
+            candidates[0]
+            .get("content", {})
+            .get("parts", [{}])[0]
+            .get("text", "")
+            .strip()
+        )
+
+        if not text:
+
+            return {
+                "success": False,
+                "error": "Gemini returned an empty response."
+            }
+
+        return {
+            "success": True,
+            "text": text
+        }
+
+    except urllib.error.HTTPError as error:
+
+        try:
+            error_body = error.read().decode("utf-8")
+        except Exception:
+            error_body = str(error)
+
+        print("Gemini HTTP error:", error_body)
+
+        return {
+            "success": False,
+            "error": (
+                "Gemini API request failed. "
+                + error_body[:500]
+            )
+        }
+
+    except urllib.error.URLError as error:
+
+        print("Gemini connection error:", error)
+
+        return {
+            "success": False,
+            "error": (
+                "Could not connect to Gemini API."
+            )
+        }
+
+    except Exception as error:
+
+        print("Gemini error:", error)
+
+        return {
+            "success": False,
+            "error": "AI service error."
+        }
+
+
+def build_medicine_ai_prompt(medicine):
+
+    return f"""
+You are the AI Advisor inside a medicine information application called MediFind.
+
+Medicine information from the application's database:
+Medicine name: {medicine.medicine_name}
+Composition: {medicine.composition}
+Manufacturer: {medicine.manufacturer or "Not available"}
+Description: {medicine.description or "Not available"}
+
+Provide general educational information about this medicine.
+
+Return the response using exactly these headings:
+
+1. Uses
+2. Common Side Effects
+3. Precautions
+4. Important Advice
+
+Rules:
+- Do not diagnose the user.
+- Do not prescribe a dose.
+- Do not tell the user to start, stop, or change a medicine.
+- Do not claim that the information is a substitute for a doctor.
+- Clearly state that dosage and treatment decisions should be confirmed with a doctor or pharmacist.
+- Keep the response concise and easy to understand.
+- Base the answer on the medicine/composition supplied above.
+"""
 
 
 # ============================================================
 # FRONTEND PAGES
 # ============================================================
 
-
-# ------------------------------------------------------------
-# HOME
-# ------------------------------------------------------------
-
 @app.route("/")
 def index():
 
-    return render_template(
-        "index.html"
-    )
+    return render_template("index.html")
 
 
-# ------------------------------------------------------------
-# LOGIN
-# ------------------------------------------------------------
-
-@app.route(
-    "/login",
-    methods=["GET", "POST"]
-)
+@app.route("/login", methods=["GET", "POST"])
 def login():
 
-    # --------------------------------------------------------
-    # GET
-    # --------------------------------------------------------
-
     if request.method == "GET":
-
-        return render_template(
-            "login.html"
-        )
-
-
-    # --------------------------------------------------------
-    # POST
-    # --------------------------------------------------------
+        return render_template("login.html")
 
     email = request.form.get(
         "email",
@@ -358,9 +548,6 @@ def login():
         ""
     )
 
-
-    # Validation
-
     if not email or not password:
 
         return render_template(
@@ -368,33 +555,16 @@ def login():
             error="Email and password are required."
         )
 
+    user = User.query.filter_by(
+        email=email
+    ).first()
 
-    # Find user
-
-    user = None
-
-    for item in users:
-
-        if item["email"] == email:
-
-            user = item
-
-            break
-
-
-    if user is None:
-
-        return render_template(
-            "login.html",
-            error="Invalid email or password."
+    if (
+        user is None
+        or not check_password_hash(
+            user.password,
+            password
         )
-
-
-    # Check password
-
-    if not check_password_hash(
-        user["password"],
-        password
     ):
 
         return render_template(
@@ -402,37 +572,18 @@ def login():
             error="Invalid email or password."
         )
 
-
-    # Create login session
-
-    session["user_id"] = user["id"]
-
+    session["user_id"] = user.id
 
     return redirect(
         url_for("dashboard")
     )
 
 
-# ------------------------------------------------------------
-# REGISTER
-# ------------------------------------------------------------
-
-@app.route(
-    "/register",
-    methods=["GET", "POST"]
-)
+@app.route("/register", methods=["GET", "POST"])
 def register():
 
-    # GET
-
     if request.method == "GET":
-
-        return render_template(
-            "register.html"
-        )
-
-
-    # POST
+        return render_template("register.html")
 
     name = request.form.get(
         "name",
@@ -449,8 +600,10 @@ def register():
         ""
     )
 
-
-    # Validation
+    confirm_password = request.form.get(
+        "confirm_password",
+        ""
+    )
 
     if not name:
 
@@ -459,14 +612,12 @@ def register():
             error="Name is required."
         )
 
-
     if not email:
 
         return render_template(
             "register.html",
             error="Email is required."
         )
-
 
     if not password:
 
@@ -475,59 +626,57 @@ def register():
             error="Password is required."
         )
 
+    if password != confirm_password:
 
-    # Check duplicate email
+        return render_template(
+            "register.html",
+            error="Passwords do not match."
+        )
 
-    for user in users:
+    if len(password) < 6:
 
-        if user["email"] == email:
+        return render_template(
+            "register.html",
+            error="Password must contain at least 6 characters."
+        )
 
-            return render_template(
-                "register.html",
-                error="Email is already registered."
-            )
+    existing_user = User.query.filter_by(
+        email=email
+    ).first()
 
+    if existing_user:
 
-    # Create user
+        return render_template(
+            "register.html",
+            error="Email is already registered."
+        )
 
-    new_user = {
-
-        "id":
-            len(users) + 1,
-
-        "name":
-            name,
-
-        "email":
-            email,
-
-        "password":
-            generate_password_hash(
-                password
-            ),
-
-        "notifications":
-            True,
-
-        "created_at":
-            datetime.now().isoformat()
-
-    }
-
-
-    users.append(
-        new_user
+    new_user = User(
+        name=name,
+        email=email,
+        password=generate_password_hash(password)
     )
 
+    try:
 
-    return redirect(
-        url_for("login")
-    )
+        db.session.add(new_user)
+        db.session.commit()
 
+        return redirect(
+            url_for("login")
+        )
 
-# ------------------------------------------------------------
-# LOGOUT
-# ------------------------------------------------------------
+    except Exception as error:
+
+        db.session.rollback()
+
+        print("Registration error:", error)
+
+        return render_template(
+            "register.html",
+            error="Registration failed."
+        )
+
 
 @app.route("/logout")
 def logout():
@@ -539,10 +688,6 @@ def logout():
     )
 
 
-# ------------------------------------------------------------
-# DASHBOARD
-# ------------------------------------------------------------
-
 @app.route("/dashboard")
 def dashboard():
 
@@ -552,9 +697,7 @@ def dashboard():
             url_for("login")
         )
 
-
     user = get_current_user()
-
 
     return render_template(
         "dashboard.html",
@@ -562,120 +705,375 @@ def dashboard():
     )
 
 
-# ------------------------------------------------------------
-# SEARCH PAGE
-# ------------------------------------------------------------
-
 @app.route("/search")
 def search():
 
+    query = request.args.get(
+        "query",
+        ""
+    ).strip()
+
+    search_type = request.args.get(
+        "search_type",
+        "both"
+    ).lower()
+
+    if search_type not in [
+        "medicine",
+        "name",
+        "composition",
+        "both"
+    ]:
+        search_type = "both"
+
+    results = []
+
+    if query:
+
+        normalized_query = normalize_text(query)
+
+        medicines = Medicine.query.order_by(
+            Medicine.medicine_name.asc()
+        ).all()
+
+        for medicine in medicines:
+
+            medicine_name = normalize_text(
+                medicine.medicine_name
+            )
+
+            composition = normalize_text(
+                medicine.composition
+            )
+
+            if search_type in ["medicine", "name"]:
+
+                matched = (
+                    normalized_query in medicine_name
+                )
+
+            elif search_type == "composition":
+
+                matched = (
+                    normalized_query in composition
+                )
+
+            else:
+
+                matched = (
+                    normalized_query in medicine_name
+                    or
+                    normalized_query in composition
+                )
+
+            if matched:
+
+                results.append(
+                    medicine_to_dict(medicine)
+                )
+
+        if is_logged_in():
+
+            history_entry = MedicineSearchHistory(
+                user_id=session["user_id"],
+                medicine_name=query
+            )
+
+            try:
+
+                db.session.add(history_entry)
+                db.session.commit()
+
+            except Exception as error:
+
+                db.session.rollback()
+                print(
+                    "Search history error:",
+                    error
+                )
+
     return render_template(
-        "search.html"
+        "search.html",
+        results=results,
+        query=query,
+        search_type=search_type
     )
 
 
-# ------------------------------------------------------------
-# MEDICINE PAGE
-# ------------------------------------------------------------
+@app.route("/medicine/<int:medicine_id>")
+def medicine_details(medicine_id):
 
-@app.route("/medicine")
-def medicine():
-
-    medicine_id = request.args.get(
-        "id",
-        type=int
-    )
-
-
-    medicine_data = None
-
-
-    if medicine_id:
-
-        medicine_data = find_medicine(
-            medicine_id
-        )
-
-
-        if medicine_data is None:
-
-            return "Medicine not found", 404
-
-
-    return render_template(
-        "medicine.html",
-        medicine=medicine_data
-    )
-
-
-# ------------------------------------------------------------
-# MEDICINE DETAILS PAGE
-# ------------------------------------------------------------
-
-@app.route(
-    "/medicine/<int:medicine_id>"
-)
-def medicine_details(
-    medicine_id
-):
-
-    medicine_data = find_medicine(
+    medicine_data = db.session.get(
+        Medicine,
         medicine_id
     )
 
-
     if medicine_data is None:
-
         return "Medicine not found", 404
 
+    alternatives = Medicine.query.filter(
+        Medicine.id != medicine_id,
+        Medicine.composition == medicine_data.composition
+    ).all()
+
+    side_effects = [
+        "Nausea",
+        "Stomach discomfort",
+        "Headache"
+    ]
+
+    precautions = [
+        "Follow the prescribed dosage.",
+        "Do not exceed the recommended dose.",
+        "Consult a doctor or pharmacist if unsure."
+    ]
 
     return render_template(
         "medicine.html",
-        medicine=medicine_data
+        medicine={
+            "id": medicine_data.id,
+            "name": medicine_data.medicine_name,
+            "composition": medicine_data.composition,
+            "manufacturer": medicine_data.manufacturer,
+            "price": float(medicine_data.price),
+            "description": medicine_data.description,
+            "dosage_form": "Tablet"
+        },
+        alternatives=[
+            {
+                "id": item.id,
+                "name": item.medicine_name,
+                "composition": item.composition,
+                "manufacturer": item.manufacturer,
+                "price": float(item.price)
+            }
+            for item in alternatives
+        ],
+        side_effects=side_effects,
+        precautions=precautions
     )
 
 
-# ------------------------------------------------------------
-# MEDICATIONS PAGE
-# ------------------------------------------------------------
+@app.route("/medication/add/<int:medicine_id>", methods=["POST"])
+def add_medication_page(medicine_id):
+
+    if not is_logged_in():
+        return redirect(url_for("login"))
+
+    medicine_data = db.session.get(
+        Medicine,
+        medicine_id
+    )
+
+    if medicine_data is None:
+        return "Medicine not found", 404
+
+    existing_medication = UserMedication.query.filter_by(
+        user_id=session["user_id"],
+        medicine_id=medicine_id
+    ).first()
+
+    if existing_medication is None:
+
+        new_medication = UserMedication(
+            user_id=session["user_id"],
+            medicine_id=medicine_id
+        )
+
+        try:
+
+            db.session.add(new_medication)
+            db.session.commit()
+
+        except Exception as error:
+
+            db.session.rollback()
+            print("Add medication page error:", error)
+
+            return "Unable to add medicine", 500
+
+    return redirect(
+        url_for("medications")
+    )
+
 
 @app.route("/medications")
 def medications():
-
     if not is_logged_in():
+        return redirect(url_for("login"))
 
-        return redirect(
-            url_for("login")
-        )
+    medication_rows = UserMedication.query.filter_by(
+        user_id=session["user_id"]
+    ).order_by(UserMedication.created_at.desc()).all()
 
+    medication_data = []
+    for item in medication_rows:
+        payload = medication_to_dict(item)
+        reminders = MedicineReminder.query.filter_by(
+            user_medication_id=item.id
+        ).order_by(
+            MedicineReminder.reminder_date.asc(),
+            MedicineReminder.reminder_time.asc()
+        ).all()
+
+        payload["reminders"] = [
+            {
+                "id": reminder.id,
+                "reminder_date": reminder.reminder_date.isoformat() if reminder.reminder_date else None,
+                "reminder_time": reminder.reminder_time.strftime("%H:%M") if reminder.reminder_time else None,
+                "status": reminder.status or "pending"
+            }
+            for reminder in reminders
+        ]
+        medication_data.append(payload)
+
+    available_medicines = Medicine.query.order_by(
+        Medicine.medicine_name.asc()
+    ).all()
 
     return render_template(
-        "medications.html"
+        "medications.html",
+        medications=medication_data,
+        available_medicines=available_medicines
     )
 
 
-# ------------------------------------------------------------
-# HISTORY PAGE
-# ------------------------------------------------------------
+@app.route("/medications/edit/<int:medication_id>", methods=["POST"])
+@login_required_json
+def edit_medication_page(medication_id):
+
+    medication = UserMedication.query.filter_by(
+        id=medication_id,
+        user_id=session["user_id"]
+    ).first()
+
+    if medication is None:
+        return "Medication not found", 404
+
+    dosage = request.form.get(
+        "dosage",
+        ""
+    ).strip()
+
+    frequency = request.form.get(
+        "frequency",
+        ""
+    ).strip()
+
+    start_date = parse_date(
+        request.form.get("start_date")
+    )
+
+    end_date = parse_date(
+        request.form.get("end_date")
+    )
+
+    if not dosage or not frequency or not start_date:
+        return "Required medication fields are missing.", 400
+
+    if end_date and end_date < start_date:
+        return "End date cannot be before start date.", 400
+
+    try:
+
+        medication.dosage = dosage
+        medication.frequency = frequency
+        medication.start_date = start_date
+        medication.end_date = end_date
+
+        db.session.commit()
+
+        return redirect(
+            url_for("medications")
+        )
+
+    except Exception as error:
+
+        db.session.rollback()
+        print("Edit medication error:", error)
+
+        return "Could not update medication.", 500
+
+
+@app.route("/medications/delete/<int:medication_id>", methods=["POST"])
+def delete_medication_page(medication_id):
+    if not is_logged_in():
+        return redirect(url_for("login"))
+    medication = UserMedication.query.filter_by(
+        id=medication_id, user_id=session["user_id"]
+    ).first()
+    if medication is None:
+        return "Medication not found", 404
+    try:
+        MedicineReminder.query.filter_by(
+            user_medication_id=medication.id
+        ).delete(synchronize_session=False)
+        db.session.delete(medication)
+        db.session.commit()
+        return redirect(url_for("medications"))
+    except Exception as error:
+        db.session.rollback()
+        print("Delete medication page error:", error)
+        return "Could not remove medication.", 500
+
+
+@app.route("/reminders/delete/<int:reminder_id>", methods=["POST"])
+def delete_reminder_page(reminder_id):
+    if not is_logged_in():
+        return redirect(url_for("login"))
+    reminder = db.session.get(MedicineReminder, reminder_id)
+    if reminder is None:
+        return "Reminder not found", 404
+    medication = db.session.get(UserMedication, reminder.user_medication_id)
+    if medication is None or medication.user_id != session["user_id"]:
+        return "Reminder not found", 404
+    try:
+        db.session.delete(reminder)
+        db.session.commit()
+        return redirect(url_for("medications"))
+    except Exception as error:
+        db.session.rollback()
+        print("Delete reminder page error:", error)
+        return "Could not delete reminder.", 500
+
 
 @app.route("/history")
 def history():
-
     if not is_logged_in():
+        return redirect(url_for("login"))
 
-        return redirect(
-            url_for("login")
-        )
+    history_rows = MedicineSearchHistory.query.filter_by(
+        user_id=session["user_id"]
+    ).order_by(MedicineSearchHistory.searched_at.desc()).all()
+    medicines = Medicine.query.order_by(Medicine.medicine_name.asc()).all()
+    history_data = []
 
+    for item in history_rows:
+        query_text = item.medicine_name or ""
+        normalized_query = normalize_text(query_text)
+        matched_medicine = None
+        for medicine in medicines:
+            medicine_name = normalize_text(medicine.medicine_name)
+            composition = normalize_text(medicine.composition)
+            if (
+                normalized_query == medicine_name
+                or normalized_query in medicine_name
+                or medicine_name in normalized_query
+                or normalized_query in composition
+            ):
+                matched_medicine = medicine
+                break
+        history_data.append({
+            "id": item.id,
+            "search_text": query_text,
+            "medicine_name": matched_medicine.medicine_name if matched_medicine else query_text,
+            "composition": matched_medicine.composition if matched_medicine else "Not available",
+            "medicine_id": matched_medicine.id if matched_medicine else None,
+            "searched_at": item.searched_at.isoformat() if item.searched_at else None
+        })
 
-    return render_template(
-        "history.html"
-    )
+    return render_template("history.html", history=history_data)
 
-
-# ------------------------------------------------------------
-# PROFILE PAGE
-# ------------------------------------------------------------
 
 @app.route("/profile")
 def profile():
@@ -686,9 +1084,7 @@ def profile():
             url_for("login")
         )
 
-
     user = get_current_user()
-
 
     return render_template(
         "profile.html",
@@ -700,11 +1096,7 @@ def profile():
 # SEARCH API
 # ============================================================
 
-
-@app.route(
-    "/api/search",
-    methods=["GET"]
-)
+@app.route("/api/search", methods=["GET"])
 def api_search():
 
     query = request.args.get(
@@ -712,237 +1104,124 @@ def api_search():
         ""
     ).strip()
 
-
     search_type = request.args.get(
         "search_type",
         "both"
     ).lower()
 
-
-    # --------------------------------------------------------
-    # Empty search
-    # --------------------------------------------------------
+    if search_type not in [
+        "medicine",
+        "name",
+        "composition",
+        "both"
+    ]:
+        search_type = "both"
 
     if not query:
 
         return jsonify({
-
-            "success":
-                True,
-
-            "query":
-                query,
-
-            "results":
-                [],
-
-            "cheaper_alternatives":
-                []
-
+            "success": True,
+            "query": query,
+            "search_type": search_type,
+            "results": [],
+            "cheaper_alternatives": []
         })
 
+    normalized_query = normalize_text(query)
 
-    normalized_query = normalize_text(
-        query
-    )
-
-
+    all_medicines = Medicine.query.all()
     matched_medicines = []
 
+    for medicine in all_medicines:
 
-    # --------------------------------------------------------
-    # SEARCH BY NAME
-    # --------------------------------------------------------
+        medicine_name = normalize_text(
+            medicine.medicine_name
+        )
 
-    if search_type == "name":
+        composition = normalize_text(
+            medicine.composition
+        )
 
-        for medicine_item in medicines:
+        if search_type in ["medicine", "name"]:
 
-            medicine_name = normalize_text(
-                medicine_item["name"]
-            )
+            matched = normalized_query in medicine_name
 
+        elif search_type == "composition":
 
-            if normalized_query in medicine_name:
+            matched = normalized_query in composition
 
-                matched_medicines.append(
-                    medicine_item
-                )
+        else:
 
-
-    # --------------------------------------------------------
-    # SEARCH BY COMPOSITION
-    # --------------------------------------------------------
-
-    elif search_type == "composition":
-
-        for medicine_item in medicines:
-
-            composition = normalize_text(
-                medicine_item["composition"]
-            )
-
-
-            if normalized_query in composition:
-
-                matched_medicines.append(
-                    medicine_item
-                )
-
-
-    # --------------------------------------------------------
-    # SEARCH BY BOTH
-    # --------------------------------------------------------
-
-    else:
-
-        for medicine_item in medicines:
-
-            medicine_name = normalize_text(
-                medicine_item["name"]
-            )
-
-            composition = normalize_text(
-                medicine_item["composition"]
-            )
-
-
-            if (
+            matched = (
                 normalized_query in medicine_name
-                or
-                normalized_query in composition
-            ):
+                or normalized_query in composition
+            )
 
-                matched_medicines.append(
-                    medicine_item
-                )
-
-
-    # --------------------------------------------------------
-    # SAVE SEARCH HISTORY
-    # --------------------------------------------------------
+        if matched:
+            matched_medicines.append(medicine)
 
     if is_logged_in():
 
-        user = get_current_user()
+        history_entry = MedicineSearchHistory(
+            user_id=session["user_id"],
+            medicine_name=query
+        )
 
+        try:
 
-        search_history.append({
+            db.session.add(history_entry)
+            db.session.commit()
 
-            "id":
-                len(search_history) + 1,
+        except Exception as error:
 
-            "user_id":
-                user["id"],
-
-            "search_text":
-                query,
-
-            "search_type":
-                search_type,
-
-            "searched_at":
-                datetime.now().isoformat(),
-
-            "medicine_id":
-                (
-                    matched_medicines[0]["id"]
-                    if matched_medicines
-                    else None
-                )
-
-        })
-
-
-    # --------------------------------------------------------
-    # FIND CHEAPER ALTERNATIVES
-    # --------------------------------------------------------
+            db.session.rollback()
+            print("Search history error:", error)
 
     cheaper_alternatives = []
-
 
     if matched_medicines:
 
         selected_medicine = matched_medicines[0]
 
-
         selected_composition = normalize_text(
-            selected_medicine["composition"]
+            selected_medicine.composition
         )
 
-
-        for medicine_item in medicines:
+        for medicine in all_medicines:
 
             current_composition = normalize_text(
-                medicine_item["composition"]
+                medicine.composition
             )
 
-
             if (
-
-                current_composition
-                ==
-                selected_composition
-
-                and
-
-                medicine_item["price"]
-                <
-                selected_medicine["price"]
-
-                and
-
-                medicine_item["id"]
-                !=
-                selected_medicine["id"]
-
+                current_composition == selected_composition
+                and medicine.price < selected_medicine.price
+                and medicine.id != selected_medicine.id
             ):
 
-                cheaper_alternatives.append(
-                    medicine_item
-                )
-
-
-        # Cheapest first
+                cheaper_alternatives.append(medicine)
 
         cheaper_alternatives.sort(
-            key=lambda x: x["price"]
+            key=lambda medicine: medicine.price
         )
-
 
     return jsonify({
 
-        "success":
-            True,
+        "success": True,
 
-        "query":
-            query,
+        "query": query,
 
-        "search_type":
-            search_type,
+        "search_type": search_type,
 
         "results": [
-
-            medicine_to_dict(
-                medicine_item
-            )
-
-            for medicine_item
-            in matched_medicines
-
+            medicine_to_dict(medicine)
+            for medicine in matched_medicines
         ],
 
         "cheaper_alternatives": [
-
-            medicine_to_dict(
-                medicine_item
-            )
-
-            for medicine_item
-            in cheaper_alternatives
-
+            medicine_to_dict(medicine)
+            for medicine in cheaper_alternatives
         ]
-
     })
 
 
@@ -950,111 +1229,268 @@ def api_search():
 # MEDICINE API
 # ============================================================
 
+@app.route("/api/medicine/<int:medicine_id>", methods=["GET"])
+def api_medicine(medicine_id):
 
-@app.route(
-    "/api/medicine/<int:medicine_id>",
-    methods=["GET"]
-)
-def api_medicine(
-    medicine_id
-):
-
-    medicine_data = find_medicine(
+    medicine_data = db.session.get(
+        Medicine,
         medicine_id
     )
-
 
     if medicine_data is None:
 
         return jsonify({
-
-            "success":
-                False,
-
-            "error":
-                "Medicine not found."
-
+            "success": False,
+            "error": "Medicine not found."
         }), 404
 
-
     return jsonify({
-
-        "success":
-            True,
-
-        "medicine":
-            medicine_to_dict(
-                medicine_data
-            )
-
+        "success": True,
+        "medicine": medicine_to_dict(medicine_data)
     })
 
 
 # ============================================================
-# SAFETY INFORMATION API
-# ============================================================
-#
-# LLM IS NOT CONNECTED YET.
-#
-# This endpoint exists so that your frontend can already
-# communicate with the backend.
-#
-# Later:
-#
-# JavaScript
-#     ↓
-# Flask
-#     ↓
-# LLM
-#     ↓
-# Side effects + precautions
-#
+# SUBSTITUTE API
 # ============================================================
 
+@app.route(
+    "/api/medicine/<int:medicine_id>/substitutes",
+    methods=["GET"]
+)
+def medicine_substitutes(medicine_id):
+
+    medicine = db.session.get(
+        Medicine,
+        medicine_id
+    )
+
+    if medicine is None:
+
+        return jsonify({
+            "success": False,
+            "error": "Medicine not found."
+        }), 404
+
+    normalized_composition = normalize_text(
+        medicine.composition
+    )
+
+    substitutes = []
+
+    medicines = Medicine.query.all()
+
+    for item in medicines:
+
+        if item.id == medicine.id:
+            continue
+
+        if normalize_text(item.composition) == normalized_composition:
+            substitutes.append(item)
+
+    substitutes.sort(
+        key=lambda item: item.price
+    )
+
+    return jsonify({
+
+        "success": True,
+
+        "medicine": medicine_to_dict(medicine),
+
+        "substitutes": [
+            medicine_to_dict(item)
+            for item in substitutes
+        ]
+    })
+
+
+# ============================================================
+# AI ADVISOR / SAFETY INFORMATION
+# ============================================================
 
 @app.route(
     "/api/medicine/<int:medicine_id>/safety",
     methods=["GET"]
 )
-def medicine_safety(
-    medicine_id
-):
+def medicine_safety(medicine_id):
 
-    medicine_data = find_medicine(
+    medicine = db.session.get(
+        Medicine,
         medicine_id
     )
 
+    if medicine is None:
 
-    if medicine_data is None:
+        return jsonify({
+            "success": False,
+            "error": "Medicine not found."
+        }), 404
+
+    prompt = build_medicine_ai_prompt(
+        medicine
+    )
+
+    ai_result = ask_gemini(prompt)
+
+    if not ai_result["success"]:
 
         return jsonify({
 
-            "success":
-                False,
+            "success": False,
 
-            "error":
-                "Medicine not found."
+            "medicine": medicine.medicine_name,
 
-        }), 404
+            "composition": medicine.composition,
 
+            "llm_connected": False,
+
+            "error": ai_result["error"]
+        }), 503
 
     return jsonify({
 
-        "success":
-            True,
+        "success": True,
 
-        "medicine":
-            medicine_data["name"],
+        "medicine": medicine.medicine_name,
 
-        "composition":
-            medicine_data["composition"],
+        "composition": medicine.composition,
 
-        "llm_connected":
-            False,
+        "llm_connected": True,
 
-        "message":
-            "Safety information will be generated after LLM integration."
+        "model": GEMINI_MODEL,
 
+        "advisor": ai_result["text"],
+
+        "disclaimer": (
+            "This AI-generated information is for general "
+            "educational purposes only. Confirm medication "
+            "decisions with a qualified doctor or pharmacist."
+        )
+    })
+
+
+@app.route(
+    "/api/ai/advisor",
+    methods=["POST"]
+)
+@login_required_json
+def ai_advisor():
+
+    data = request.get_json(
+        silent=True
+    )
+
+    if not data:
+
+        return jsonify({
+            "success": False,
+            "error": "JSON data is required."
+        }), 400
+
+    medicine_id = data.get(
+        "medicine_id"
+    )
+
+    question = str(
+        data.get(
+            "question",
+            ""
+        )
+    ).strip()
+
+    if medicine_id is None:
+
+        return jsonify({
+            "success": False,
+            "error": "medicine_id is required."
+        }), 400
+
+    try:
+
+        medicine_id = int(medicine_id)
+
+    except (TypeError, ValueError):
+
+        return jsonify({
+            "success": False,
+            "error": "Invalid medicine_id."
+        }), 400
+
+    medicine = db.session.get(
+        Medicine,
+        medicine_id
+    )
+
+    if medicine is None:
+
+        return jsonify({
+            "success": False,
+            "error": "Medicine not found."
+        }), 404
+
+    if question:
+
+        user_question = question
+
+    else:
+
+        user_question = (
+            "Explain the uses, common side effects, "
+            "precautions, and important advice for this medicine."
+        )
+
+    prompt = f"""
+You are the MediFind AI Advisor.
+
+Medicine:
+Name: {medicine.medicine_name}
+Composition: {medicine.composition}
+Manufacturer: {medicine.manufacturer or "Not available"}
+Description: {medicine.description or "Not available"}
+
+User question:
+{user_question}
+
+Answer clearly for a general user.
+
+Important safety rules:
+- Give general educational information only.
+- Do not diagnose.
+- Do not prescribe or change a dose.
+- Do not tell the user to start or stop a medicine.
+- Mention when professional medical advice is appropriate.
+- If the question requires information that cannot safely be determined from the supplied medicine information, say so.
+"""
+
+    ai_result = ask_gemini(prompt)
+
+    if not ai_result["success"]:
+
+        return jsonify({
+            "success": False,
+            "medicine": medicine.medicine_name,
+            "llm_connected": False,
+            "error": ai_result["error"]
+        }), 503
+
+    return jsonify({
+
+        "success": True,
+
+        "medicine": medicine_to_dict(medicine),
+
+        "llm_connected": True,
+
+        "model": GEMINI_MODEL,
+
+        "answer": ai_result["text"],
+
+        "disclaimer": (
+            "AI Advisor provides general educational "
+            "information and does not replace a doctor "
+            "or pharmacist."
+        )
     })
 
 
@@ -1062,736 +1498,675 @@ def medicine_safety(
 # MEDICATION API
 # ============================================================
 
-
-@app.route(
-    "/api/medications",
-    methods=["GET"]
-)
+@app.route("/api/medications", methods=["GET"])
+@login_required_json
 def get_medications():
 
-    if not is_logged_in():
-
-        return jsonify({
-
-            "success":
-                False,
-
-            "error":
-                "Login required."
-
-        }), 401
-
-
-    user = get_current_user()
-
-
-    result = []
-
-
-    for medication in user_medications:
-
-        if medication["user_id"] != user["id"]:
-
-            continue
-
-
-        medicine_data = find_medicine(
-            medication["medicine_id"]
-        )
-
-
-        if medicine_data is None:
-
-            continue
-
-
-        result.append({
-
-            "id":
-                medication["id"],
-
-            "medicine_id":
-                medicine_data["id"],
-
-            "medicine_name":
-                medicine_data["name"],
-
-            "composition":
-                medicine_data["composition"],
-
-            "frequency_hours":
-                medication["frequency_hours"],
-
-            "start_date":
-                medication["start_date"],
-
-            "next_dose":
-                medication["next_dose"],
-
-            "active":
-                medication["active"]
-
-        })
-
+    medications = UserMedication.query.filter_by(
+        user_id=session["user_id"]
+    ).order_by(
+        UserMedication.created_at.desc()
+    ).all()
 
     return jsonify({
 
-        "success":
-            True,
+        "success": True,
 
-        "medications":
-            result
-
+        "medications": [
+            medication_to_dict(item)
+            for item in medications
+        ]
     })
 
 
-# ============================================================
-# ADD MEDICATION
-# ============================================================
+@app.route("/api/medications", methods=["POST"])
+@login_required_json
+def add_medication():
+
+    data = get_request_data()
+
+    if not data:
+        if request.is_json:
+            return jsonify({
+                "success": False,
+                "error": "JSON data is required."
+            }), 400
+        return "Form data is required.", 400
+
+    medicine_id = data.get("medicine_id")
+
+    if medicine_id is None:
+
+        return jsonify({
+            "success": False,
+            "error": "medicine_id is required."
+        }), 400
+
+    try:
+
+        medicine_id = int(medicine_id)
+
+    except (TypeError, ValueError):
+
+        return jsonify({
+            "success": False,
+            "error": "Invalid medicine_id."
+        }), 400
+
+    medicine = db.session.get(
+        Medicine,
+        medicine_id
+    )
+
+    if medicine is None:
+
+        return jsonify({
+            "success": False,
+            "error": "Medicine not found."
+        }), 404
+
+    dosage = data.get("dosage")
+    frequency = data.get("frequency")
+
+    if frequency is None:
+        frequency = data.get("frequency_hours")
+
+    start_date = parse_date(
+        data.get("start_date")
+    )
+
+    end_date = parse_date(
+        data.get("end_date")
+    )
+
+    if data.get("start_date") and start_date is None:
+
+        return jsonify({
+            "success": False,
+            "error": "Invalid start_date. Use YYYY-MM-DD."
+        }), 400
+
+    if data.get("end_date") and end_date is None:
+
+        return jsonify({
+            "success": False,
+            "error": "Invalid end_date. Use YYYY-MM-DD."
+        }), 400
+
+    if (
+        start_date
+        and end_date
+        and end_date < start_date
+    ):
+
+        return jsonify({
+            "success": False,
+            "error": "end_date cannot be before start_date."
+        }), 400
+
+    new_medication = UserMedication(
+
+        user_id=session["user_id"],
+
+        medicine_id=medicine.id,
+
+        dosage=(
+            str(dosage)
+            if dosage is not None
+            else None
+        ),
+
+        frequency=(
+            str(frequency)
+            if frequency is not None
+            else None
+        ),
+
+        start_date=start_date,
+
+        end_date=end_date
+    )
+
+    try:
+
+        db.session.add(new_medication)
+        db.session.commit()
+
+        if request.is_json:
+            return jsonify({
+                "success": True,
+                "message": "Medication added successfully.",
+                "medication": medication_to_dict(new_medication)
+            }), 201
+
+        return redirect(url_for("medications"))
+
+    except Exception as error:
+
+        db.session.rollback()
+
+        print("Add medication error:", error)
+
+        return jsonify({
+            "success": False,
+            "error": "Could not add medication."
+        }), 500
 
 
 @app.route(
-    "/api/medications",
-    methods=["POST"]
+    "/api/medications/<int:medication_id>",
+    methods=["PUT"]
 )
-def add_medication():
+@login_required_json
+def update_medication(medication_id):
 
-    if not is_logged_in():
+    medication = UserMedication.query.filter_by(
+        id=medication_id,
+        user_id=session["user_id"]
+    ).first()
+
+    if medication is None:
 
         return jsonify({
-
-            "success":
-                False,
-
-            "error":
-                "Login required."
-
-        }), 401
-
+            "success": False,
+            "error": "Medication not found."
+        }), 404
 
     data = request.get_json(
         silent=True
     )
 
-
     if not data:
 
         return jsonify({
-
-            "success":
-                False,
-
-            "error":
-                "JSON data is required."
-
+            "success": False,
+            "error": "JSON data is required."
         }), 400
 
-
-    medicine_id = data.get(
-        "medicine_id"
-    )
-
-
-    if medicine_id is None:
-
-        return jsonify({
-
-            "success":
-                False,
-
-            "error":
-                "medicine_id is required."
-
-        }), 400
-
-
-    medicine_data = find_medicine(
-        int(medicine_id)
-    )
-
-
-    if medicine_data is None:
-
-        return jsonify({
-
-            "success":
-                False,
-
-            "error":
-                "Medicine not found."
-
-        }), 404
-
-
-    # --------------------------------------------------------
-    # Frequency
-    # --------------------------------------------------------
-
-    frequency_hours = data.get(
-        "frequency_hours"
-    )
-
-
-    # Allow simple frontend values
-
-    if frequency_hours is None:
-
-        frequency = data.get(
-            "frequency",
-            "24"
+    if "dosage" in data:
+        medication.dosage = str(
+            data["dosage"]
         )
 
-
-        frequency_map = {
-
-            "once_daily":
-                24,
-
-            "twice_daily":
-                12,
-
-            "three_times_daily":
-                8,
-
-            "four_times_daily":
-                6
-
-        }
-
-
-        frequency_hours = frequency_map.get(
-            str(frequency),
-            None
+    if "frequency" in data:
+        medication.frequency = str(
+            data["frequency"]
         )
 
+    if "start_date" in data:
 
-    try:
-
-        frequency_hours = int(
-            frequency_hours
+        start_date = parse_date(
+            data["start_date"]
         )
 
-    except (
-        TypeError,
-        ValueError
+        if data["start_date"] and start_date is None:
+
+            return jsonify({
+                "success": False,
+                "error":
+                    "Invalid start_date. Use YYYY-MM-DD."
+            }), 400
+
+        medication.start_date = start_date
+
+    if "end_date" in data:
+
+        end_date = parse_date(
+            data["end_date"]
+        )
+
+        if data["end_date"] and end_date is None:
+
+            return jsonify({
+                "success": False,
+                "error":
+                    "Invalid end_date. Use YYYY-MM-DD."
+            }), 400
+
+        medication.end_date = end_date
+
+    if (
+        medication.start_date
+        and medication.end_date
+        and medication.end_date < medication.start_date
     ):
 
         return jsonify({
-
-            "success":
-                False,
-
+            "success": False,
             "error":
-                "Invalid frequency."
-
+                "end_date cannot be before start_date."
         }), 400
 
+    try:
 
-    if frequency_hours <= 0:
+        db.session.commit()
 
         return jsonify({
+            "success": True,
+            "message":
+                "Medication updated successfully.",
+            "medication":
+                medication_to_dict(medication)
+        })
 
-            "success":
-                False,
+    except Exception as error:
 
+        db.session.rollback()
+
+        print("Update medication error:", error)
+
+        return jsonify({
+            "success": False,
             "error":
-                "Frequency must be greater than zero."
-
-        }), 400
-
-
-    # --------------------------------------------------------
-    # Start time
-    # --------------------------------------------------------
-
-    now = datetime.now()
-
-
-    # --------------------------------------------------------
-    # Calculate next dose
-    # --------------------------------------------------------
-
-    next_dose = (
-        now
-        +
-        timedelta(
-            hours=frequency_hours
-        )
-    )
-
-
-    # --------------------------------------------------------
-    # Create medication
-    # --------------------------------------------------------
-
-    new_medication = {
-
-        "id":
-            len(user_medications) + 1,
-
-        "user_id":
-            get_current_user()["id"],
-
-        "medicine_id":
-            medicine_data["id"],
-
-        "frequency_hours":
-            frequency_hours,
-
-        "start_date":
-            now.isoformat(),
-
-        "next_dose":
-            next_dose.isoformat(),
-
-        "active":
-            True
-
-    }
-
-
-    user_medications.append(
-        new_medication
-    )
-
-
-    return jsonify({
-
-        "success":
-            True,
-
-        "message":
-            "Medication added successfully.",
-
-        "medication": {
-
-            "id":
-                new_medication["id"],
-
-            "medicine_id":
-                medicine_data["id"],
-
-            "medicine_name":
-                medicine_data["name"],
-
-            "composition":
-                medicine_data["composition"],
-
-            "frequency_hours":
-                frequency_hours,
-
-            "start_date":
-                now.isoformat(),
-
-            "next_dose":
-                next_dose.isoformat()
-
-        }
-
-    }), 201
+                "Could not update medication."
+        }), 500
 
 
 # ============================================================
 # UPCOMING MEDICATION
 # ============================================================
 
-
 @app.route(
     "/api/medications/upcoming",
     methods=["GET"]
 )
+@login_required_json
 def upcoming_medication():
 
-    if not is_logged_in():
+    medications = UserMedication.query.filter_by(
+        user_id=session["user_id"]
+    ).order_by(
+        UserMedication.start_date.asc()
+    ).all()
+
+    if not medications:
 
         return jsonify({
-
-            "success":
-                False,
-
-            "error":
-                "Login required."
-
-        }), 401
-
-
-    user = get_current_user()
-
-
-    user_meds = []
-
-
-    for medication in user_medications:
-
-        if (
-            medication["user_id"]
-            ==
-            user["id"]
-
-            and
-
-            medication["active"]
-        ):
-
-            user_meds.append(
-                medication
-            )
-
-
-    if not user_meds:
-
-        return jsonify({
-
-            "success":
-                True,
-
-            "medication":
-                None
-
+            "success": True,
+            "medication": None
         })
 
+    current_date = date.today()
+    active_medications = []
 
-    # Sort by next dose
-
-    user_meds.sort(
-        key=lambda x: x["next_dose"]
-    )
-
-
-    medication = user_meds[0]
-
-
-    medicine_data = find_medicine(
-        medication["medicine_id"]
-    )
-
-
-    return jsonify({
-
-        "success":
-            True,
-
-        "medication": {
-
-            "id":
-                medication["id"],
-
-            "medicine_id":
-                medicine_data["id"],
-
-            "medicine_name":
-                medicine_data["name"],
-
-            "composition":
-                medicine_data["composition"],
-
-            "next_dose":
-                medication["next_dose"],
-
-            "frequency_hours":
-                medication["frequency_hours"]
-
-        }
-
-    })
-
-
-# ============================================================
-# MARK MEDICATION AS TAKEN
-# ============================================================
-
-
-@app.route(
-    "/api/medications/<int:medication_id>/taken",
-    methods=["POST"]
-)
-def mark_dose_taken(
-    medication_id
-):
-
-    if not is_logged_in():
-
-        return jsonify({
-
-            "success":
-                False,
-
-            "error":
-                "Login required."
-
-        }), 401
-
-
-    user = get_current_user()
-
-
-    medication = None
-
-
-    for item in user_medications:
+    for medication in medications:
 
         if (
-
-            item["id"]
-            ==
-            medication_id
-
-            and
-
-            item["user_id"]
-            ==
-            user["id"]
-
-            and
-
-            item["active"]
-
+            medication.end_date
+            and medication.end_date < current_date
         ):
+            continue
 
-            medication = item
+        active_medications.append(medication)
 
-            break
-
-
-    if medication is None:
+    if not active_medications:
 
         return jsonify({
-
-            "success":
-                False,
-
-            "error":
-                "Medication not found."
-
-        }), 404
-
-
-    now = datetime.now()
-
-
-    # --------------------------------------------------------
-    # Store dose history
-    # --------------------------------------------------------
-
-    dose_history.append({
-
-        "id":
-            len(dose_history) + 1,
-
-        "user_id":
-            user["id"],
-
-        "medication_id":
-            medication["id"],
-
-        "taken_at":
-            now.isoformat()
-
-    })
-
-
-    # --------------------------------------------------------
-    # Calculate next dose
-    # --------------------------------------------------------
-
-    next_dose = (
-
-        now
-
-        +
-
-        timedelta(
-            hours=medication[
-                "frequency_hours"
-            ]
-        )
-
-    )
-
-
-    medication["next_dose"] = (
-        next_dose.isoformat()
-    )
-
+            "success": True,
+            "medication": None
+        })
 
     return jsonify({
 
-        "success":
-            True,
+        "success": True,
 
-        "message":
-            "Dose marked as taken.",
-
-        "next_dose":
-            next_dose.isoformat()
-
+        "medication":
+            medication_to_dict(
+                active_medications[0]
+            )
     })
 
 
 # ============================================================
-# DELETE / STOP MEDICATION
+# DELETE MEDICATION
 # ============================================================
-
 
 @app.route(
     "/api/medications/<int:medication_id>",
     methods=["DELETE"]
 )
-def delete_medication(
-    medication_id
-):
+@login_required_json
+def delete_medication(medication_id):
 
-    if not is_logged_in():
+    medication = UserMedication.query.filter_by(
+        id=medication_id,
+        user_id=session["user_id"]
+    ).first()
+
+    if medication is None:
 
         return jsonify({
+            "success": False,
+            "error": "Medication not found."
+        }), 404
 
-            "success":
-                False,
+    try:
 
+        MedicineReminder.query.filter_by(
+            user_medication_id=medication.id
+        ).delete(
+            synchronize_session=False
+        )
+
+        db.session.delete(medication)
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message":
+                "Medication stopped successfully."
+        })
+
+    except Exception as error:
+
+        db.session.rollback()
+
+        print("Delete medication error:", error)
+
+        return jsonify({
+            "success": False,
             "error":
-                "Login required."
-
-        }), 401
-
-
-    user = get_current_user()
+                "Could not stop medication."
+        }), 500
 
 
-    for medication in user_medications:
+# ============================================================
+# REMINDERS
+# ============================================================
 
-        if (
+@app.route(
+    "/api/reminders",
+    methods=["GET"]
+)
+@login_required_json
+def get_reminders():
 
-            medication["id"]
-            ==
-            medication_id
+    user_medications = UserMedication.query.filter_by(
+        user_id=session["user_id"]
+    ).all()
 
-            and
+    medication_ids = [
+        medication.id
+        for medication in user_medications
+    ]
 
-            medication["user_id"]
-            ==
-            user["id"]
+    if not medication_ids:
 
-        ):
+        return jsonify({
+            "success": True,
+            "reminders": []
+        })
 
-            medication["active"] = False
+    reminders = MedicineReminder.query.filter(
+        MedicineReminder.user_medication_id.in_(
+            medication_ids
+        )
+    ).order_by(
+        MedicineReminder.reminder_date.asc(),
+        MedicineReminder.reminder_time.asc()
+    ).all()
 
+    result = []
 
-            return jsonify({
+    for reminder in reminders:
 
-                "success":
-                    True,
+        medication = db.session.get(
+            UserMedication,
+            reminder.user_medication_id
+        )
 
-                "message":
-                    "Medication stopped successfully."
+        medicine = (
+            db.session.get(
+                Medicine,
+                medication.medicine_id
+            )
+            if medication
+            else None
+        )
 
-            })
+        result.append({
 
+            "id": reminder.id,
+
+            "user_medication_id":
+                reminder.user_medication_id,
+
+            "medicine_name": (
+                medicine.medicine_name
+                if medicine
+                else None
+            ),
+
+            "reminder_date": (
+                reminder.reminder_date.isoformat()
+                if reminder.reminder_date
+                else None
+            ),
+
+            "reminder_time": (
+                reminder.reminder_time.strftime("%H:%M")
+                if reminder.reminder_time
+                else None
+            ),
+
+            "status": reminder.status
+        })
 
     return jsonify({
+        "success": True,
+        "reminders": result
+    })
 
-        "success":
-            False,
 
-        "error":
-            "Medication not found."
+@app.route(
+    "/api/reminders",
+    methods=["POST"]
+)
+@login_required_json
+def add_reminder():
 
-    }), 404
+    data = get_request_data()
+
+    if not data:
+        if request.is_json:
+            return jsonify({
+                "success": False,
+                "error": "JSON data is required."
+            }), 400
+        return "Form data is required.", 400
+
+    medication_id = data.get(
+        "user_medication_id"
+    )
+
+    reminder_date = parse_date(
+        data.get("reminder_date")
+    )
+
+    reminder_time = parse_time(
+        data.get("reminder_time")
+    )
+
+    if medication_id is None:
+
+        return jsonify({
+            "success": False,
+            "error":
+                "user_medication_id is required."
+        }), 400
+
+    if reminder_date is None:
+
+        return jsonify({
+            "success": False,
+            "error":
+                "Valid reminder_date is required."
+        }), 400
+
+    if reminder_time is None:
+
+        return jsonify({
+            "success": False,
+            "error":
+                "Valid reminder_time is required. Use HH:MM."
+        }), 400
+
+    medication = UserMedication.query.filter_by(
+        id=medication_id,
+        user_id=session["user_id"]
+    ).first()
+
+    if medication is None:
+
+        return jsonify({
+            "success": False,
+            "error":
+                "Medication not found."
+        }), 404
+
+    reminder = MedicineReminder(
+
+        user_medication_id=medication.id,
+
+        reminder_date=reminder_date,
+
+        reminder_time=reminder_time,
+
+        status="pending"
+    )
+
+    try:
+
+        db.session.add(reminder)
+        db.session.commit()
+
+        if request.is_json:
+            return jsonify({
+                "success": True,
+                "message": "Reminder added successfully.",
+                "reminder": {
+                    "id": reminder.id,
+                    "user_medication_id": reminder.user_medication_id,
+                    "reminder_date": reminder.reminder_date.isoformat(),
+                    "reminder_time": reminder.reminder_time.strftime("%H:%M"),
+                    "status": reminder.status
+                }
+            }), 201
+
+        return redirect(url_for("medications"))
+
+    except Exception as error:
+
+        db.session.rollback()
+
+        print("Add reminder error:", error)
+
+        return jsonify({
+            "success": False,
+            "error":
+                "Could not add reminder."
+        }), 500
+
+
+@app.route(
+    "/api/reminders/<int:reminder_id>",
+    methods=["DELETE"]
+)
+@login_required_json
+def delete_reminder(reminder_id):
+
+    reminder = db.session.get(
+        MedicineReminder,
+        reminder_id
+    )
+
+    if reminder is None:
+
+        return jsonify({
+            "success": False,
+            "error": "Reminder not found."
+        }), 404
+
+    medication = db.session.get(
+        UserMedication,
+        reminder.user_medication_id
+    )
+
+    if (
+        medication is None
+        or medication.user_id != session["user_id"]
+    ):
+
+        return jsonify({
+            "success": False,
+            "error": "Reminder not found."
+        }), 404
+
+    try:
+
+        db.session.delete(reminder)
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message":
+                "Reminder deleted successfully."
+        })
+
+    except Exception as error:
+
+        db.session.rollback()
+
+        print("Delete reminder error:", error)
+
+        return jsonify({
+            "success": False,
+            "error":
+                "Could not delete reminder."
+        }), 500
 
 
 # ============================================================
-# SEARCH HISTORY API
+# HISTORY API
 # ============================================================
-
 
 @app.route(
     "/api/history",
     methods=["GET"]
 )
+@login_required_json
 def get_history():
 
-    if not is_logged_in():
+    history = MedicineSearchHistory.query.filter_by(
+        user_id=session["user_id"]
+    ).order_by(
+        MedicineSearchHistory.searched_at.desc()
+    ).all()
 
-        return jsonify({
+    result = []
 
-            "success":
-                False,
+    for item in history:
 
-            "error":
-                "Login required."
+        result.append({
 
-        }), 401
-
-
-    user = get_current_user()
-
-
-    user_history = []
-
-
-    for history_item in search_history:
-
-        if history_item["user_id"] != user["id"]:
-
-            continue
-
-
-        medicine_data = None
-
-
-        if history_item["medicine_id"]:
-
-            medicine_data = find_medicine(
-                history_item["medicine_id"]
-            )
-
-
-        user_history.append({
-
-            "id":
-                history_item["id"],
+            "id": item.id,
 
             "search_text":
-                history_item["search_text"],
-
-            "search_type":
-                history_item["search_type"],
-
-            "medicine_id":
-                history_item["medicine_id"],
+                item.medicine_name,
 
             "medicine_name":
-                (
-                    medicine_data["name"]
-                    if medicine_data
-                    else None
-                ),
+                item.medicine_name,
 
-            "composition":
-                (
-                    medicine_data["composition"]
-                    if medicine_data
-                    else None
-                ),
-
-            "searched_at":
-                history_item["searched_at"]
-
+            "searched_at": (
+                item.searched_at.isoformat()
+                if item.searched_at
+                else None
+            )
         })
 
-
-    # Latest search first
-
-    user_history.reverse()
-
-
     return jsonify({
-
-        "success":
-            True,
-
-        "history":
-            user_history
-
+        "success": True,
+        "history": result
     })
 
 
@@ -1799,97 +2174,50 @@ def get_history():
 # PROFILE API
 # ============================================================
 
-
 @app.route(
     "/api/profile",
     methods=["GET"]
 )
+@login_required_json
 def get_profile():
-
-    if not is_logged_in():
-
-        return jsonify({
-
-            "success":
-                False,
-
-            "error":
-                "Login required."
-
-        }), 401
-
 
     user = get_current_user()
 
-
     return jsonify({
 
-        "success":
-            True,
+        "success": True,
 
         "user": {
 
-            "id":
-                user["id"],
+            "id": user.id,
 
-            "name":
-                user["name"],
+            "name": user.name,
 
-            "email":
-                user["email"],
-
-            "notifications":
-                user["notifications"]
-
+            "email": user.email
         }
-
     })
-
-
-# ============================================================
-# UPDATE PROFILE
-# ============================================================
 
 
 @app.route(
     "/api/profile",
     methods=["POST"]
 )
+@login_required_json
 def update_profile():
-
-    if not is_logged_in():
-
-        return jsonify({
-
-            "success":
-                False,
-
-            "error":
-                "Login required."
-
-        }), 401
-
 
     data = request.get_json(
         silent=True
     )
 
-
     if not data:
 
         return jsonify({
-
-            "success":
-                False,
-
+            "success": False,
             "error":
                 "JSON data is required."
-
         }), 400
 
-
     user = get_current_user()
-
 
     if "name" in data:
 
@@ -1897,345 +2225,471 @@ def update_profile():
             data["name"]
         ).strip()
 
-
         if not name:
 
             return jsonify({
-
-                "success":
-                    False,
-
+                "success": False,
                 "error":
                     "Name cannot be empty."
-
             }), 400
 
+        user.name = name
 
-        user["name"] = name
+    if "email" in data:
+
+        email = str(
+            data["email"]
+        ).strip().lower()
+
+        if not email:
+
+            return jsonify({
+                "success": False,
+                "error":
+                    "Email cannot be empty."
+            }), 400
+
+        existing_user = User.query.filter(
+            User.email == email,
+            User.id != user.id
+        ).first()
+
+        if existing_user:
+
+            return jsonify({
+                "success": False,
+                "error":
+                    "Email is already registered."
+            }), 409
+
+        user.email = email
+
+    try:
+
+        db.session.commit()
+
+        return jsonify({
+
+            "success": True,
+
+            "message":
+                "Profile updated successfully.",
+
+            "user": {
+
+                "id": user.id,
+
+                "name": user.name,
+
+                "email": user.email
+            }
+        })
+
+    except Exception as error:
+
+        db.session.rollback()
+
+        print("Profile update error:", error)
+
+        return jsonify({
+            "success": False,
+            "error":
+                "Could not update profile."
+        }), 500
 
 
-    return jsonify({
+# ============================================================
+# CHANGE PASSWORD
+# ============================================================
 
-        "success":
-            True,
+@app.route(
+    "/change-password",
+    methods=["POST"]
+)
+@login_required_json
+def change_password():
 
-        "message":
-            "Profile updated successfully.",
+    data = request.get_json(
+        silent=True
+    )
 
-        "user": {
+    if data:
 
-            "id":
-                user["id"],
+        current_password = data.get(
+            "current_password"
+        )
 
-            "name":
-                user["name"],
+        new_password = data.get(
+            "new_password"
+        )
 
-            "email":
-                user["email"]
+        confirm_password = data.get(
+            "confirm_password"
+        )
 
-        }
+    else:
 
-    })
+        current_password = request.form.get(
+            "current_password"
+        )
+
+        new_password = request.form.get(
+            "new_password"
+        )
+
+        confirm_password = request.form.get(
+            "confirm_password"
+        )
+
+    if not current_password:
+
+        return jsonify({
+            "success": False,
+            "error":
+                "Current password is required."
+        }), 400
+
+    if not new_password:
+
+        return jsonify({
+            "success": False,
+            "error":
+                "New password is required."
+        }), 400
+
+    if new_password != confirm_password:
+
+        return jsonify({
+            "success": False,
+            "error":
+                "New password and confirm password do not match."
+        }), 400
+
+    if len(new_password) < 6:
+
+        return jsonify({
+            "success": False,
+            "error":
+                "Password must contain at least 6 characters."
+        }), 400
+
+    user = get_current_user()
+
+    if not check_password_hash(
+        user.password,
+        current_password
+    ):
+
+        return jsonify({
+            "success": False,
+            "error":
+                "Current password is incorrect."
+        }), 400
+
+    user.password = generate_password_hash(
+        new_password
+    )
+
+    try:
+
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message":
+                "Password changed successfully."
+        })
+
+    except Exception as error:
+
+        db.session.rollback()
+
+        print("Password update error:", error)
+
+        return jsonify({
+            "success": False,
+            "error":
+                "Could not change password."
+        }), 500
 
 
 # ============================================================
 # NOTIFICATION SETTINGS
 # ============================================================
 
-
 @app.route(
     "/api/profile/notifications",
-    methods=["POST"]
+    methods=["GET", "POST"]
 )
-def update_notifications():
+@login_required_json
+def notification_settings():
 
-    if not is_logged_in():
+    if request.method == "GET":
 
         return jsonify({
 
-            "success":
-                False,
+            "success": True,
 
-            "error":
-                "Login required."
-
-        }), 401
-
+            "notifications":
+                session.get(
+                    "notifications",
+                    True
+                )
+        })
 
     data = request.get_json(
         silent=True
     )
 
-
-    if not data or "enabled" not in data:
+    if (
+        not data
+        or "enabled" not in data
+    ):
 
         return jsonify({
-
-            "success":
-                False,
-
+            "success": False,
             "error":
                 "enabled is required."
-
         }), 400
 
-
-    user = get_current_user()
-
-
-    user["notifications"] = bool(
+    session["notifications"] = bool(
         data["enabled"]
     )
 
-
     return jsonify({
 
-        "success":
-            True,
+        "success": True,
 
         "message":
             "Notification settings updated.",
 
         "notifications":
-            user["notifications"]
-
+            session["notifications"]
     })
-    
-    
-    
-    
-    
 
 
 # ============================================================
 # NOTIFICATIONS
 # ============================================================
 
-
-
-
 @app.route(
     "/api/notifications",
     methods=["GET"]
 )
+@login_required_json
 def notifications():
 
-    if not is_logged_in():
+    if not session.get(
+        "notifications",
+        True
+    ):
 
         return jsonify({
-
-            "success":
-                False,
-
-            "error":
-                "Login required."
-
-        }), 401
-
-
-    user = get_current_user()
-
-
-    if not user["notifications"]:
-
-        return jsonify({
-
-            "success":
-                True,
-
-            "notifications":
-                []
-
+            "success": True,
+            "notifications": []
         })
-
 
     now = datetime.now()
 
+    user_medications = UserMedication.query.filter_by(
+        user_id=session["user_id"]
+    ).all()
 
     notifications_list = []
-
 
     for medication in user_medications:
 
         if (
-
-            medication["user_id"]
-            !=
-            user["id"]
-
-            or
-
-            not medication["active"]
-
+            medication.end_date
+            and medication.end_date < now.date()
         ):
-
             continue
 
-
-        next_dose = datetime.fromisoformat(
-            medication["next_dose"]
+        medicine = db.session.get(
+            Medicine,
+            medication.medicine_id
         )
 
+        if medicine is None:
+            continue
 
-        if next_dose <= now:
+        reminders = MedicineReminder.query.filter(
+            MedicineReminder.user_medication_id == medication.id,
+            MedicineReminder.status.in_(["pending", "due"])
+        ).filter(
+            MedicineReminder.reminder_date == now.date()
+        ).all()
 
-            medicine_data = find_medicine(
-                medication["medicine_id"]
+        for reminder in reminders:
+
+            reminder_datetime = datetime.combine(
+                reminder.reminder_date,
+                reminder.reminder_time
             )
 
-
-            if medicine_data:
+            if reminder_datetime <= now:
 
                 notifications_list.append({
 
+                    "reminder_id":
+                        reminder.id,
+
                     "medication_id":
-                        medication["id"],
+                        medication.id,
 
                     "medicine_name":
-                        medicine_data["name"],
+                        medicine.medicine_name,
 
-                    "next_dose":
-                        medication["next_dose"],
+                    "reminder_date":
+                        reminder.reminder_date.isoformat(),
+
+                    "reminder_time":
+                        reminder.reminder_time.strftime("%H:%M"),
 
                     "message":
                         (
                             "Your scheduled dose of "
-                            +
-                            medicine_data["name"]
-                            +
-                            " is due."
+                            + medicine.medicine_name
+                            + " is due."
                         )
-
                 })
-
 
     return jsonify({
 
-        "success":
-            True,
+        "success": True,
 
         "notifications":
             notifications_list
-
     })
-    
-@app.route("/change-password", methods=["POST"])
-def change_password():
 
-    # For now, database is not connected.
-    # So we will only demonstrate the functionality.
 
-    current_password = request.form.get("current_password")
-    new_password = request.form.get("new_password")
-    confirm_password = request.form.get("confirm_password")
+# ============================================================
+# COMPLETE REMINDER
+# ============================================================
 
-    if not current_password:
-        return "Current password is required", 400
+@app.route(
+    "/api/reminders/<int:reminder_id>/complete",
+    methods=["POST"]
+)
+@login_required_json
+def complete_reminder(reminder_id):
 
-    if not new_password:
-        return "New password is required", 400
+    reminder = db.session.get(
+        MedicineReminder,
+        reminder_id
+    )
 
-    if new_password != confirm_password:
-        return "New password and confirm password do not match", 400
+    if reminder is None:
 
-    if len(new_password) < 6:
-        return "Password must contain at least 6 characters", 400
+        return jsonify({
+            "success": False,
+            "error":
+                "Reminder not found."
+        }), 404
 
-    return "Password changed successfully"
+    medication = db.session.get(
+        UserMedication,
+        reminder.user_medication_id
+    )
+
+    if (
+        medication is None
+        or medication.user_id != session["user_id"]
+    ):
+
+        return jsonify({
+            "success": False,
+            "error":
+                "Reminder not found."
+        }), 404
+
+    reminder.status = "completed"
+
+    try:
+
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message":
+                "Reminder completed."
+        })
+
+    except Exception as error:
+
+        db.session.rollback()
+
+        print("Complete reminder error:", error)
+
+        return jsonify({
+            "success": False,
+            "error":
+                "Could not update reminder."
+        }), 500
 
 
 # ============================================================
 # DOSE HISTORY
 # ============================================================
 
-
 @app.route(
     "/api/dose-history",
     methods=["GET"]
 )
+@login_required_json
 def get_dose_history():
-
-    if not is_logged_in():
-
-        return jsonify({
-
-            "success":
-                False,
-
-            "error":
-                "Login required."
-
-        }), 401
-
-
-    user = get_current_user()
-
-
-    result = []
-
-
-    for dose in dose_history:
-
-        if dose["user_id"] != user["id"]:
-
-            continue
-
-
-        medication = None
-
-
-        for item in user_medications:
-
-            if item["id"] == dose["medication_id"]:
-
-                medication = item
-
-                break
-
-
-        if medication is None:
-
-            continue
-
-
-        medicine_data = find_medicine(
-            medication["medicine_id"]
-        )
-
-
-        if medicine_data is None:
-
-            continue
-
-
-        result.append({
-
-            "id":
-                dose["id"],
-
-            "medication_id":
-                dose["medication_id"],
-
-            "medicine_name":
-                medicine_data["name"],
-
-            "taken_at":
-                dose["taken_at"]
-
-        })
-
-
-    result.reverse()
-
 
     return jsonify({
 
-        "success":
-            True,
+        "success": True,
 
-        "dose_history":
-            result
+        "dose_history": []
+    })
 
+
+# ============================================================
+# AI HEALTH CHECK
+# ============================================================
+
+@app.route(
+    "/api/ai/health",
+    methods=["GET"]
+)
+def ai_health():
+
+    if not GEMINI_API_KEY:
+
+        return jsonify({
+
+            "success": True,
+
+            "llm_connected": False,
+
+            "model": GEMINI_MODEL,
+
+            "message":
+                "Gemini API key is not configured."
+        })
+
+    test_result = ask_gemini(
+        "Reply with exactly the word: CONNECTED"
+    )
+
+    return jsonify({
+
+        "success": True,
+
+        "llm_connected":
+            test_result["success"],
+
+        "model":
+            GEMINI_MODEL,
+
+        "message": (
+            "Gemini AI is connected."
+            if test_result["success"]
+            else test_result["error"]
+        )
     })
 
 
@@ -2243,17 +2697,29 @@ def get_dose_history():
 # HEALTH CHECK
 # ============================================================
 
-
 @app.route(
     "/api/health",
     methods=["GET"]
 )
 def health():
 
+    try:
+
+        db.session.execute(
+            db.text("SELECT 1")
+        )
+
+        database_connected = True
+
+    except Exception as error:
+
+        print("Health check error:", error)
+
+        database_connected = False
+
     return jsonify({
 
-        "success":
-            True,
+        "success": True,
 
         "application":
             "MediFind",
@@ -2262,33 +2728,78 @@ def health():
             "Flask",
 
         "database":
-            False,
+            database_connected,
 
         "llm":
+            bool(GEMINI_API_KEY),
+
+        "llm_model":
+            GEMINI_MODEL,
+
+        "price_trend":
+            False,
+
+        "savings_leaderboard":
             False,
 
         "status":
             "Backend is running."
-
     })
+
+
+# ============================================================
+# TEST DATABASE
+# ============================================================
+
+@app.route("/test-db")
+def test_db():
+
+    try:
+
+        users = User.query.all()
+        medicines = Medicine.query.all()
+
+        return jsonify({
+
+            "success": True,
+
+            "database":
+                "Connected",
+
+            "users_count":
+                len(users),
+
+            "medicines_count":
+                len(medicines)
+        })
+
+    except Exception as error:
+
+        return jsonify({
+
+            "success": False,
+
+            "database":
+                "Connection failed",
+
+            "error":
+                str(error)
+        }), 500
 
 
 # ============================================================
 # ERROR HANDLERS
 # ============================================================
 
-
 @app.errorhandler(404)
 def page_not_found(error):
 
     return jsonify({
 
-        "success":
-            False,
+        "success": False,
 
         "error":
             "Page or endpoint not found."
-
     }), 404
 
 
@@ -2297,38 +2808,176 @@ def internal_server_error(error):
 
     return jsonify({
 
-        "success":
-            False,
+        "success": False,
 
         "error":
             "Internal server error."
-
     }), 500
+
+
+# ============================================================
+# MYSQL REMINDER EVENT
+# ============================================================
+
+def ensure_reminder_mysql_event():
+    """Create the MySQL Event that marks reminders as due."""
+    connection = None
+    cursor = None
+    try:
+        table_name = MedicineReminder.__table__.name
+        connection = create_mysql_connection()
+        cursor = connection.cursor()
+        try:
+            cursor.execute("SET GLOBAL event_scheduler = ON")
+        except Exception as scheduler_error:
+            print("MySQL event scheduler warning:", scheduler_error)
+        event_sql = f"""
+        CREATE EVENT IF NOT EXISTS medifind_reminder_event
+        ON SCHEDULE EVERY 5 SECOND
+        DO
+          UPDATE `{table_name}`
+          SET status = 'due'
+          WHERE status = 'pending'
+            AND TIMESTAMP(reminder_date, reminder_time) <= NOW();
+        """
+        cursor.execute(event_sql)
+        connection.commit()
+        print("MySQL reminder event is ready.")
+    except Exception as error:
+        print("MySQL reminder event setup warning:", repr(error))
+    finally:
+        try:
+            if cursor: cursor.close()
+        except Exception: pass
+        try:
+            if connection: connection.close()
+        except Exception: pass
+
+
+# ============================================================
+# REMINDER ALARM WITHOUT EDITING medications.html
+# ============================================================
+
+REMINDER_ALARM_SCRIPT = r"""
+<script>
+(function () {
+    if (window.__medifindReminderAlarmLoaded) return;
+    window.__medifindReminderAlarmLoaded = true;
+    let audioContext = null;
+    let alarmTimer = null;
+    let currentReminderId = null;
+    const storageKey = "medifind_triggered_reminders";
+
+    function getTriggered() {
+        try { return JSON.parse(localStorage.getItem(storageKey) || "[]"); }
+        catch (e) { return []; }
+    }
+    function remember(id) {
+        const ids = getTriggered();
+        if (!ids.includes(id)) {
+            ids.push(id);
+            localStorage.setItem(storageKey, JSON.stringify(ids));
+        }
+    }
+    function popup() {
+        let element = document.getElementById("medifind-alarm-popup");
+        if (element) return element;
+        element = document.createElement("div");
+        element.id = "medifind-alarm-popup";
+        element.style.cssText = "position:fixed;top:25px;right:25px;width:340px;z-index:99999;background:#fff;border-radius:16px;padding:24px;box-shadow:0 12px 40px rgba(0,0,0,.25);border:3px solid #dc3545;font-family:Arial,sans-serif;";
+        element.innerHTML = "<div style='font-size:26px;margin-bottom:10px'>⏰ Medicine Reminder</div><div id='medifind-alarm-text' style='font-size:17px;line-height:1.5;margin-bottom:18px'></div><button id='medifind-stop-alarm' style='width:100%;padding:12px;border:0;border-radius:9px;background:#dc3545;color:white;font-size:16px;font-weight:700;cursor:pointer'>Stop Alarm</button>";
+        document.body.appendChild(element);
+        document.getElementById("medifind-stop-alarm").onclick = stopAlarm;
+        return element;
+    }
+    function beep() {
+        try {
+            audioContext = audioContext || new (window.AudioContext || window.webkitAudioContext)();
+            if (audioContext.state === "suspended") audioContext.resume();
+            const oscillator = audioContext.createOscillator();
+            const gain = audioContext.createGain();
+            oscillator.type = "sine";
+            oscillator.frequency.value = 880;
+            gain.gain.value = 0.25;
+            oscillator.connect(gain);
+            gain.connect(audioContext.destination);
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + 0.45);
+        } catch (e) { console.warn("MediFind alarm audio error", e); }
+    }
+    function startAlarm(notification) {
+        if (currentReminderId === notification.reminder_id) return;
+        stopAlarm();
+        currentReminderId = notification.reminder_id;
+        remember(currentReminderId);
+        const element = popup();
+        document.getElementById("medifind-alarm-text").textContent = notification.message || "It is time to take your medicine.";
+        element.style.display = "block";
+        beep();
+        alarmTimer = setInterval(beep, 1200);
+        if ("Notification" in window && Notification.permission === "granted") {
+            new Notification("MediFind Medicine Reminder", {body: notification.message || "It is time to take your medicine."});
+        }
+    }
+    function stopAlarm() {
+        if (alarmTimer) { clearInterval(alarmTimer); alarmTimer = null; }
+        currentReminderId = null;
+        const element = document.getElementById("medifind-alarm-popup");
+        if (element) element.style.display = "none";
+    }
+    document.addEventListener("click", function () {
+        try {
+            audioContext = audioContext || new (window.AudioContext || window.webkitAudioContext)();
+            if (audioContext.state === "suspended") audioContext.resume();
+        } catch (e) {}
+        if ("Notification" in window && Notification.permission === "default") {
+            Notification.requestPermission().catch(function () {});
+        }
+    }, {once:true});
+    async function checkReminders() {
+        try {
+            const response = await fetch("/api/notifications", {cache:"no-store"});
+            if (!response.ok) return;
+            const data = await response.json();
+            if (!data.success || !Array.isArray(data.notifications)) return;
+            const triggered = getTriggered();
+            for (const notification of data.notifications) {
+                if (!triggered.includes(notification.reminder_id)) {
+                    startAlarm(notification);
+                    break;
+                }
+            }
+        } catch (e) { console.warn("MediFind reminder polling error", e); }
+    }
+    popup().style.display = "none";
+    checkReminders();
+    setInterval(checkReminders, 5000);
+})();
+</script>
+"""
+
+@app.after_request
+def inject_reminder_alarm(response):
+    """Inject alarm JavaScript into /medications without editing medications.html."""
+    try:
+        if (request.path == "/medications" and response.content_type and response.content_type.startswith("text/html")):
+            html = response.get_data(as_text=True)
+            if "__medifindReminderAlarmLoaded" not in html:
+                response.set_data(html.replace("</body>", REMINDER_ALARM_SCRIPT + "</body>"))
+    except Exception as error:
+        print("Reminder alarm injection warning:", repr(error))
+    return response
 
 
 # ============================================================
 # RUN APPLICATION
 # ============================================================
 
-
-@app.route("/test-db")
-def test_db():
-    try:
-        users = User.query.all()
-
-        return jsonify({
-            "success": True,
-            "database": "Connected",
-            "users_count": len(users)
-        })
-
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "database": "Connection failed",
-            "error": str(e)
-        }), 500
-
-
 if __name__ == "__main__":
-    app.run(debug=True)
+
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+        ensure_reminder_mysql_event()
+
+    app.run(
+        debug=True
+    )

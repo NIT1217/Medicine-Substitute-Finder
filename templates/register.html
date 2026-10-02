@@ -1,20 +1,40 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
+
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
     <title>Create Account - MediFind</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/style.css') }}"
+    >
+
 </head>
+
 
 <body>
 
+
 <header>
+
     <nav class="navbar">
 
         <div class="logo">
-            <a href="{{ url_for('index') }}">MediFind</a>
+
+            <a href="{{ url_for('index') }}">
+                MediFind
+            </a>
+
         </div>
+
 
         <div class="nav-links">
 
@@ -29,6 +49,7 @@
         </div>
 
     </nav>
+
 </header>
 
 
@@ -36,14 +57,30 @@
 
     <div class="auth-card">
 
-        <h1>Create Account</h1>
+        <h1>
+            Create Account
+        </h1>
+
 
         <p class="auth-subtitle">
             Create your MediFind account
         </p>
 
 
-        <form method="POST" action="{{ url_for('register') }}">
+        {% if error %}
+
+        <p class="error-message">
+            {{ error }}
+        </p>
+
+        {% endif %}
+
+
+        <form
+            method="POST"
+            action="{{ url_for('register') }}"
+        >
+
 
             <div class="form-group">
 
@@ -56,6 +93,7 @@
                     id="name"
                     name="name"
                     placeholder="Enter your full name"
+                    value="{{ name or '' }}"
                     required
                 >
 
@@ -73,6 +111,7 @@
                     id="email"
                     name="email"
                     placeholder="Enter your email"
+                    value="{{ email or '' }}"
                     required
                 >
 
@@ -113,9 +152,13 @@
             </div>
 
 
-            <button type="submit" class="primary-button full-width">
+            <button
+                type="submit"
+                class="primary-button full-width"
+            >
                 Create Account
             </button>
+
 
         </form>
 
@@ -130,17 +173,30 @@
 
         </p>
 
+
     </div>
 
 </main>
 
 
 <footer>
-    <p>© 2026 MediFind</p>
+
+    <p>
+        © 2026 MediFind
+    </p>
+
 </footer>
 
-<script src="{{ url_for('static', filename='js/main.js') }}"></script>
-<script src="{{ url_for('static', filename='js/register.js') }}"></script>
+
+<script
+    src="{{ url_for('static', filename='js/main.js') }}"
+></script>
+
+<script
+    src="{{ url_for('static', filename='js/register.js') }}"
+></script>
+
 
 </body>
+
 </html>
